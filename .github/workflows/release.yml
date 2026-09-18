@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release, e.g. v1.0.19 (must already exist and point at the commit to ship)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      changelog: ${{ steps.notes.outputs.changelog }}
+
+    steps:
+      - name: Determine tag and version
+        id: tag
+        shell: bash
+        run: |
+          tag="${{ github.event.inputs.tag }}"
+          if [ -z "$tag" ]; then
+            tag="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Verify manifest.json version matches the tag
+        shell: bash
+        run: |
+          manifestVersion=$(jq -r .version src/SystemHotkeys/manifest.json)
+          if [ "$manifestVersion" != "${{ steps.tag.outputs.version }}" ]; then
+            echo "::error::manifest.json version ($manifestVersion) does not match tag ${{ steps.tag.outputs.tag }}. Bump manifest.json's version, commit that, then tag the new commit."
+            exit 1
+          fi
+
+      - name: Restore
+        run: dotnet restore SystemHotkeys.slnx
+
+      - name: Test
+        run: dotnet test SystemHotkeys.slnx --configuration Release
+
+      - name: Install macrodeck-plugin CLI
+        run: dotnet tool install --global MacroDeck.Plugin.Cli --prerelease
+
+      - name: Build the plugin artifact
+        run: macrodeck-plugin build --source src/SystemHotkeys --output ./artifacts
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release create "${{ steps.tag.outputs.tag }}" ./artifacts/*.macroDeckPlugin \
+            --title "${{ steps.tag.outputs.tag }}" \
+            --generate-notes
+
+      - name: Read generated release notes
+        id: notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          {
+            echo "changelog<<EOF_CHANGELOG_$GITHUB_RUN_ID"
+            gh release view "${{ steps.tag.outputs.tag }}" --json body -q .body
+            echo "EOF_CHANGELOG_$GITHUB_RUN_ID"
+          } >> "$GITHUB_OUTPUT"
+
+  publish:
+    needs: release
+    uses: Macro-Deck-App/GitHub-Actions/.github/workflows/publish-plugin.yml@v1
+    permissions:
+      contents: read
+      id-token: write
+    with:
+      version: ${{ needs.release.outputs.tag }}
+      source: src/SystemHotkeys
+      cli-version: 3.0.0-beta.11
+      changelog: ${{ needs.release.outputs.changelog }}
+      # The release job above already ran the tests on windows-latest
+      run-tests: false

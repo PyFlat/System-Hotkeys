@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schemas.macro-deck.app/plugin-manifest-v1.schema.json",
+  "manifestVersion": 1,
+  "id": "com.pyflat.system-hotkeys",
+  "name": "System Hotkeys",
+  "version": "1.0.0",
+  "description": "Fires a Macro Deck event whenever a modifier+key combination is pressed anywhere on the machine, so any automation or widget flow can be bound to a system-wide hotkey.",
+  "icon": "Assets/icon.svg",
+  "entrypoints": {
+    "win-x64": {
+      "executable": "runtimes/win-x64/SystemHotkeys.dll",
+      "runtime": {
+        "kind": "FrameworkDependent",
+        "dotnetVersion": "10.0"
+      }
+    }
+  },
+  "publisher": {
+    "name": "PyFlat"
+  },
+  "license": "MIT",
+  "permissions": [
+    "events:publish",
+    "host:event-bindings",
+    "host:deck"
+  ],
+  "compatibility": {
+    "macroDeck": ">=3.0.0-beta.7"
+  },
+  "repository": "https://github.com/PyFlat/System-Hotkeys"
+}

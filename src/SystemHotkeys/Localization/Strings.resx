@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <!-- The default-language file. Every translation is checked against it and the fallback chain ends
+       here, so it is required even for a plugin that ships one language. Add a language by adding
+       Localization/Strings.<culture>.resx beside it (Strings.de.resx, Strings.pt-BR.resx).
+       A dotted key becomes a nested class: Events.HotkeyPressed.Name is Strings.Events.HotkeyPressed.Name(). -->
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="Events.HotkeyPressed.Name" xml:space="preserve">
+    <value>Hotkey pressed</value>
+  </data>
+  <data name="Events.HotkeyPressed.Description" xml:space="preserve">
+    <value>Fires whenever a modifier and key combination is pressed anywhere on this machine.</value>
+  </data>
+  <data name="Events.HotkeyPressed.Combo.Label" xml:space="preserve">
+    <value>Hotkey</value>
+  </data>
+  <data name="Events.HotkeyPressed.Combo.Description" xml:space="preserve">
+    <value>The key that fires this trigger. Click Record and press the combo, or pick a key and toggle the modifiers. A key with no modifier is allowed - but a bare key such as a letter or digit then fires this trigger on every press of it anywhere on the machine, so use one only when that is what you want.</value>
+  </data>
+  <data name="Events.HotkeyPressed.Suppress.Label" xml:space="preserve">
+    <value>Also stop this key from reaching other apps</value>
+  </data>
+  <data name="Events.HotkeyPressed.Suppress.Description" xml:space="preserve">
+    <value>Optional. Keeps this combo's trailing key from reaching the focused app - useful when the key also does something there. Modifiers like Ctrl or Shift are never intercepted.</value>
+  </data>
+  <data name="Events.HotkeyPressed.Device.Label" xml:space="preserve">
+    <value>Device</value>
+  </data>
+  <data name="Events.HotkeyPressed.Device.Description" xml:space="preserve">
+    <value>Optional. Only fires while this exact device is connected. Add Profile or Folder too to mean this device in that profile or folder.</value>
+  </data>
+  <data name="Events.HotkeyPressed.Device.Placeholder" xml:space="preserve">
+    <value>Any device</value>
+  </data>
+  <data name="Events.HotkeyPressed.Profile.Label" xml:space="preserve">
+    <value>Profile</value>
+  </data>
+  <data name="Events.HotkeyPressed.Profile.Description" xml:space="preserve">
+    <value>Optional. Only fires while this profile is open on some connected device.</value>
+  </data>
+  <data name="Events.HotkeyPressed.Profile.Placeholder" xml:space="preserve">
+    <value>Any profile</value>
+  </data>
+  <data name="Events.HotkeyPressed.Folder.Label" xml:space="preserve">
+    <value>Folder</value>
+  </data>
+  <data name="Events.HotkeyPressed.Folder.Description" xml:space="preserve">
+    <value>Optional. Only fires while this folder is open on some connected device - bind the same combo once per folder so only the open one reacts.</value>
+  </data>
+  <data name="Events.HotkeyPressed.Folder.Placeholder" xml:space="preserve">
+    <value>Any folder</value>
+  </data>
+</root>

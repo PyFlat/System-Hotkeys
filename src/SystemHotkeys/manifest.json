@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "com.pyflat.system-hotkeys",
   "name": "System Hotkeys",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Fires a Macro Deck event whenever a modifier+key combination is pressed anywhere on the machine, so any automation or widget flow can be bound to a system-wide hotkey.",
   "icon": "Assets/icon.svg",
   "entrypoints": {

@@ -29,11 +29,15 @@ public sealed class BoundHotkeyCombos
         bindings.Any(binding =>
             string.Equals(binding.EventId, eventId, StringComparison.Ordinal)
             && (
-                binding.Parameters.ContainsKey(deviceParameterName)
-                || binding.Parameters.ContainsKey(profileParameterName)
-                || binding.Parameters.ContainsKey(folderParameterName)
+                IsFilterSet(binding, deviceParameterName)
+                || IsFilterSet(binding, profileParameterName)
+                || IsFilterSet(binding, folderParameterName)
             )
         );
+
+    private static bool IsFilterSet(EventBinding binding, string parameterName) =>
+        binding.Parameters.TryGetValue(parameterName, out var value)
+        && value is not { Operator: "==", Value: null or { ValueKind: JsonValueKind.Null } };
 
     public static BoundHotkeyCombos FromBindings(
         IReadOnlyList<EventBinding> bindings,
@@ -100,9 +104,21 @@ public sealed class BoundHotkeyCombos
         IReadOnlyList<DeckClient> connectedClients
     )
     {
-        var matchesDevice = FilterPredicate(binding, deviceParameterName, client => client.DeviceId);
-        var matchesProfile = FilterPredicate(binding, profileParameterName, client => client.ProfileId);
-        var matchesFolder = FilterPredicate(binding, folderParameterName, client => client.FolderId);
+        var matchesDevice = FilterPredicate(
+            binding,
+            deviceParameterName,
+            client => client.DeviceId
+        );
+        var matchesProfile = FilterPredicate(
+            binding,
+            profileParameterName,
+            client => client.ProfileId
+        );
+        var matchesFolder = FilterPredicate(
+            binding,
+            folderParameterName,
+            client => client.FolderId
+        );
 
         if (matchesDevice is null && matchesProfile is null && matchesFolder is null)
         {
@@ -123,11 +139,12 @@ public sealed class BoundHotkeyCombos
         Func<DeckClient, string?> select
     )
     {
-        if (!binding.Parameters.TryGetValue(parameterName, out var value))
+        if (!IsFilterSet(binding, parameterName))
         {
             return null;
         }
 
+        var value = binding.Parameters[parameterName];
         return value is { Operator: "==", Value: { ValueKind: JsonValueKind.String } text }
             ? client => select(client) == text.GetString()
             : _ => false;

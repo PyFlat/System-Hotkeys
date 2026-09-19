@@ -70,10 +70,8 @@ Design knowledge that is not obvious from the code alone:
   any host update.
 - **`VirtualKeys` is deliberately not exhaustive.** A virtual-key code with no entry in `_names` is simply
   never recognised as a combo's trailing key - the safe default for a key nobody has asked to bind yet,
-  not a bug to "complete". Numpad `-`, `.` and `/` share the same recorded value as their main-row
-  counterparts (Macro Deck's own combo recorder cannot tell them apart), so they are only distinguishable
-  through the combo editor's **Select** mode rather than **Record** - see the README's
-  ["Using this plugin"](README.md#using-this-plugin) section for the user-facing version of this.
+  not a bug to "complete". Every numpad key is named `Numpad*` (digits, Add, Subtract, Multiply,
+  Divide, Decimal), which is what Macro Deck's combo recorder stores for it, so Record and Select agree.
 - **Combo matching is case- and order-insensitive.** `BoundHotkeyCombos.NormalizedKey` upper-cases the key
   and sorts its modifiers before comparing, so `Shift+Ctrl+F3` and `ctrl+shift+f3` are the same combo.
 - **No config flow.** Every setting lives on the `hotkey-pressed` trigger itself (Device/Profile/Folder
@@ -101,11 +99,11 @@ fetch in the same session. **Fetch every document below again before you start a
 you call it done.** If one cannot be fetched, say so and stop rather than assuming it still says what it
 said last time.
 
-| What | Where |
-| --- | --- |
-| Creator Guidelines (Markdown) | <https://api.macro-deck.app/api/v1/public/creator-guidelines> |
-| Blocked packages (JSON) | <https://api.macro-deck.app/api/v1/public/dependency-policy/blocked-packages> |
-| Minimum SDK version and allowed Macro Deck packages (JSON) | <https://api.macro-deck.app/api/v1/public/dependency-policy/sdk> |
+| What                                                       | Where                                                                         |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Creator Guidelines (Markdown)                              | <https://api.macro-deck.app/api/v1/public/creator-guidelines>                 |
+| Blocked packages (JSON)                                    | <https://api.macro-deck.app/api/v1/public/dependency-policy/blocked-packages> |
+| Minimum SDK version and allowed Macro Deck packages (JSON) | <https://api.macro-deck.app/api/v1/public/dependency-policy/sdk>              |
 
 A change is not done until all six hold:
 

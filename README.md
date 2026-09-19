@@ -19,19 +19,11 @@ narrow it down.
    no configuration of its own; every setting lives on the trigger itself.
 2. In Macro Deck, open the **Automations** page (or a widget's own flow editor) and add a trigger of type
    **Event**, bound to this plugin's `Hotkey pressed` event.
-3. Set the trigger's **Hotkey** field. It is Macro Deck's keyboard-combo editor, and which mode to use
-   depends on the key:
-   - **Record**, for almost everything - letters, digits, `F1`-`F24`, the navigation and editing block,
-     the common punctuation keys, numpad `+` and `*`, and the media keys. The plugin publishes what
-     recording produces, so a **Select**-picked value can fail to match for these (a numpad `+` records
-     as `+`, not the list's `NumpadAdd`).
-   - **Select**, only for numpad `-`, `.` and `/` (Numpad Subtract/Decimal/Divide in the **Numpad**
-     group). Recording one of these stores the same `-`/`.`/`/` as the matching main-row key - Macro
-     Deck's own recorder cannot tell a numpad key from a main-row key that types the same character, so
-     picking it from the list is the only way to get a value distinct from that main-row key's.
-
-   Numpad digits are not recognised at all: what they record as depends on Num Lock, too unstable to
-   bind reliably either way.
+3. Set the trigger's **Hotkey** field. It is Macro Deck's keyboard-combo editor: click **Record** and
+   press the combo. That works for letters, digits, `F1`-`F24`, the navigation and editing block, the
+   punctuation keys, every numpad key (digits, `+`, `-`, `*`, `/` and `.`, which Macro Deck records as
+   distinct from the main-row keys) and the media keys. Picking a key from the list in **Select** mode
+   stores the same values.
 4. Build whatever the Automation or flow should do when that hotkey fires.
 
 A key with no modifier is allowed. A bare non-typing key (a function or media key) is a fine global

@@ -125,6 +125,32 @@ public sealed class BoundHotkeyCombosTests
     }
 
     [Test]
+    public void Unset_scope_filters_sent_as_null_values_leave_the_binding_unscoped()
+    {
+        var nullFilter = new EventBindingValue(JsonSerializer.SerializeToElement<string?>(null), "==");
+        var binding = Binding(
+            EventId,
+            Combo([], "NumpadMultiply"),
+            Bool(true),
+            nullFilter,
+            nullFilter,
+            nullFilter
+        );
+
+        Assert.That(FromBindings(binding).Contains(new HotkeyCombo([], "NumpadMultiply")), Is.True);
+        Assert.That(
+            BoundHotkeyCombos.AnyBindingIsScoped(
+                [binding],
+                EventId,
+                DeviceParameterName,
+                ProfileParameterName,
+                FolderParameterName
+            ),
+            Is.False
+        );
+    }
+
+    [Test]
     public void A_binding_that_did_not_opt_in_is_not_contained()
     {
         var suppressed = FromBindings(

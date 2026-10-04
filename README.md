@@ -132,6 +132,15 @@ dotnet test
 Build and tests need no Macro Deck installation. For an interactive session, use the checked-in
 **Macro Deck - Real Host** launch profile after the one-time setup below.
 
+The [Makefile](Makefile) wraps the everyday commands (`make` lists them): `make run` / `make watch`
+launch the plugin against the running Macro Deck through `macrodeck-plugin run` (pairing once, the
+credential kept in `src/SystemHotkeys/.macrodeck-dev-state/`), `make stub` against a stub host,
+`make cli` keeps the CLI at the SDK's version, `make pack` builds and inspects the win-x64 artifact, and
+`make release` tests and packs, then tags the version in `manifest.json` and pushes - the tag starts the
+release workflow. `make release VERSION=x.y.z` does the same for another version, bumping and committing
+`manifest.json` first. Either refuses a version that is not newer than the latest release tag. On
+Windows it needs GNU make and Git Bash's `sh` on `PATH`.
+
 ## Project layout
 
 ```

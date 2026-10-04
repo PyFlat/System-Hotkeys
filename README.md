@@ -97,6 +97,15 @@ A press only publishes once per connected client when it has to - when at least 
 `hotkey-pressed` actually sets Device, Profile or Folder. A plain global hotkey, with nothing scoped
 anywhere, always publishes exactly once, no matter how many clients are connected.
 
+## Privacy
+
+A global keyboard hook sees every key pressed on the machine, so here is exactly what this plugin does
+with them. Each keystroke is compared in memory against the combos your triggers are bound to and then
+forgotten. Nothing is recorded, written to disk or logged - the only hotkey-related log line is the
+count of suppressed combos described above. The plugin opens no network connection of its own: the
+only thing it sends anywhere is the `hotkey-pressed` event itself, to your local Macro Deck instance,
+and only when a combo completes. It uses no AI.
+
 ## Installing
 
 Grab the packed `.macroDeckPlugin` artifact from the

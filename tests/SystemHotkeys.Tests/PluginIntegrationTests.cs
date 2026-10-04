@@ -28,7 +28,7 @@ public sealed class PluginIntegrationTests
     {
         await using var harness = CreateHarness();
 
-        Assert.DoesNotThrowAsync(harness.InitializeIntegrationsAsync);
+        await Assert.DoesNotThrowAsync(harness.InitializeIntegrationsAsync);
     }
 
     [Test]

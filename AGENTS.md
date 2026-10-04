@@ -130,7 +130,10 @@ A change is not done until all six hold:
    and an upload whose manifest names anyone else is refused. `license` must be set, at most 64
    characters, as an SPDX identifier such as `MIT`; the Store shows it as the plugin's licence.
    `repository` must be the GitHub repository the plugin is built and released from, written
-   `https://github.com/<owner>/<name>`; an upload from any other repository is refused.
+   `https://github.com/<owner>/<name>`; an upload from any other repository is refused. `ai` must be
+   present and accurate (guidelines section 9): omitting it shows as "not declared" on the listing, and
+   every flag `false` with an empty `services` is what states "uses no AI". The icon must visibly say
+   "keyboard / hotkey" at small sizes, and any third-party icon keeps its licence credit in README.md.
 6. **The plugin passes the conformance suite on every platform it declares.** The Store refuses a build
    that does not come with a conformance report for each platform in `entrypoints`, or whose report shows
    a failed Required check, never reached the plugin (`MDC0201`, the handshake, did not pass), or is for

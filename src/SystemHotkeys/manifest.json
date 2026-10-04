@@ -19,6 +19,12 @@
     "name": "PyFlat"
   },
   "license": "MIT",
+  "ai": {
+    "interaction": false,
+    "generatedContent": false,
+    "generatedAssets": false,
+    "services": []
+  },
   "permissions": [
     "events:publish",
     "host:event-bindings",

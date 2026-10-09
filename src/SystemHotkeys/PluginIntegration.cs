@@ -23,16 +23,19 @@ public sealed class PluginIntegration
     internal const string FolderParameterName = "folderId";
 
     private readonly ILogger _logger;
-    private readonly GlobalKeyboardHook _hook;
+    private readonly KeyboardHook _hook;
+    private readonly HookAccessNotifications _accessNotifications = new();
 
     private IIntegrationContext? _context;
     private volatile bool _anyBindingIsScoped;
+    private volatile bool _suppressionRequested;
 
     public PluginIntegration(ILogger logger)
     {
         _logger = logger.ForContext<PluginIntegration>();
-        _hook = new GlobalKeyboardHook(logger);
+        _hook = KeyboardHook.Create(logger);
         _hook.HotkeyPressed += OnHotkeyPressed;
+        _hook.AccessChanged += OnHookAccessChanged;
     }
 
     public IReadOnlyList<IActionDefinition> Actions { get; } = [];
@@ -60,6 +63,7 @@ public sealed class PluginIntegration
         }
 
         _hook.Dispose();
+        _accessNotifications.Reset();
         _context = null;
         return Task.CompletedTask;
     }
@@ -159,6 +163,18 @@ public sealed class PluginIntegration
             _logger
         );
         _hook.SetSuppressed(bound);
+        _suppressionRequested = bound.Count > 0;
+        UpdateAccessNotifications();
+    }
+
+    private void OnHookAccessChanged(KeyboardHookAccess access) => UpdateAccessNotifications();
+
+    private void UpdateAccessNotifications()
+    {
+        if (_context is { } context)
+        {
+            _accessNotifications.Update(context.Notifications, _hook.Access, _suppressionRequested);
+        }
     }
 
     // Moving folders never raises BindingsChanged, so watch it separately

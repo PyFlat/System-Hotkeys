@@ -61,4 +61,16 @@
   <data name="Events.HotkeyPressed.Folder.Placeholder" xml:space="preserve">
     <value>Any folder</value>
   </data>
+  <data name="Notifications.InputMonitoringRequired.Title" xml:space="preserve">
+    <value>System Hotkeys cannot see the keyboard</value>
+  </data>
+  <data name="Notifications.InputMonitoringRequired.Message" xml:space="preserve">
+    <value>macOS has not allowed Macro Deck to read keyboard input, so no hotkey fires. Open System Settings, Privacy &amp; Security, Input Monitoring and turn on Macro Deck. Hotkeys start working a few seconds later. If they do not, restart Macro Deck.</value>
+  </data>
+  <data name="Notifications.AccessibilityRequired.Title" xml:space="preserve">
+    <value>Hotkeys still reach other apps</value>
+  </data>
+  <data name="Notifications.AccessibilityRequired.Message" xml:space="preserve">
+    <value>A hotkey trigger is set to stop its key from reaching other apps, which on macOS needs Accessibility access. Open System Settings, Privacy &amp; Security, Accessibility and turn on Macro Deck. Until then, hotkeys still fire but the focused app sees the key too.</value>
+  </data>
 </root>

@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace SystemHotkeys.Hotkeys;
+namespace SystemHotkeys.Hotkeys.Windows;
 
 /// <summary>
 /// Win32 P/Invoke surface for the global, passive <c>WH_KEYBOARD_LL</c> hook.

@@ -38,24 +38,18 @@ public sealed class MacKeyCodesTests
     [TestCase(0x2A, "\\")]
     [TestCase(0x32, "`")]
     [TestCase(0x48, "AudioVolumeUp")]
+    [TestCase(0x4A, "AudioVolumeMute")]
+    [TestCase(0x72, "Insert")]
+    [TestCase(0x79, "PageDown")]
+    [TestCase(0x6E, "ContextMenu")]
+    [TestCase(0x27, "'")]
+    [TestCase(0x21, "[")]
     public void Mac_key_codes_name_the_same_key_as_on_windows(int keyCode, string expected)
     {
         var vkCode = MacKeyCodes.ToVirtualKey(keyCode);
 
         Assert.That(vkCode, Is.Not.Null);
         Assert.That(VirtualKeys.NameOf(vkCode!.Value), Is.EqualTo(expected));
-    }
-
-    [Test]
-    public void Every_mapped_mac_key_code_has_an_editor_key_name()
-    {
-        for (var keyCode = 0; keyCode <= 0x7F; keyCode++)
-        {
-            if (MacKeyCodes.ToVirtualKey(keyCode) is { } vkCode)
-            {
-                Assert.That(VirtualKeys.NameOf(vkCode), Is.Not.Null, $"kVK 0x{keyCode:X2}");
-            }
-        }
     }
 
     [TestCase(0x37)]

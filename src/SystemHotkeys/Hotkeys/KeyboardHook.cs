@@ -5,10 +5,7 @@ using SystemHotkeys.Hotkeys.Windows;
 
 namespace SystemHotkeys.Hotkeys;
 
-/// <summary>
-/// The platform-neutral half of the global keyboard hook: tracks held keys, detects a completed combo and
-/// decides which key events a suppressed combo swallows. A platform backend feeds it virtual-key codes.
-/// </summary>
+// Platform backends feed this Windows virtual-key codes.
 internal abstract class KeyboardHook : IDisposable
 {
 	private readonly Lock _gate = new();
@@ -60,7 +57,7 @@ internal abstract class KeyboardHook : IDisposable
 		AccessChanged?.Invoke(access);
 	}
 
-	/// <returns><see langword="true"/> when the key-down must be kept from other applications.</returns>
+	// True when the key must not reach other applications.
 	protected bool OnKeyDown(int vkCode)
 	{
 		bool isNewPress;
@@ -102,7 +99,6 @@ internal abstract class KeyboardHook : IDisposable
 		return true;
 	}
 
-	/// <returns><see langword="true"/> when the key-up must be kept from other applications.</returns>
 	protected bool OnKeyUp(int vkCode)
 	{
 		lock (_gate)
@@ -112,10 +108,7 @@ internal abstract class KeyboardHook : IDisposable
 		}
 	}
 
-	/// <summary>
-	/// Records a modifier's state without running combo detection, for a platform that reports modifier
-	/// state rather than modifier key presses. A modifier never completes a combo and is never swallowed.
-	/// </summary>
+	// For a platform that reports modifier state rather than modifier key presses.
 	protected void SetModifierHeld(int vkCode, bool held)
 	{
 		lock (_gate)
@@ -145,14 +138,9 @@ internal abstract class KeyboardHook : IDisposable
 
 internal enum KeyboardHookAccess
 {
-	/// <summary>Not started yet, or failed for a reason the user cannot fix with a permission.</summary>
+	// Also a hook that failed for a reason no permission fixes.
 	Pending,
-
-	/// <summary>The OS refused the hook until the user grants a permission.</summary>
 	Denied,
-
-	/// <summary>Hotkeys are detected, but a suppressed combo still reaches other applications.</summary>
 	ObserveOnly,
-
 	Full,
 }

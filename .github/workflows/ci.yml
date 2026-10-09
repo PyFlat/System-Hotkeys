@@ -8,8 +8,7 @@ on:
 
 jobs:
   build-and-test:
-    # One runner per platform the manifest declares: the integration tests start the real keyboard hook,
-    # so this is where a backend that crashes on its own platform shows up.
+    # The integration tests start the real keyboard hook, so every platform runs them.
     strategy:
       fail-fast: false
       matrix:

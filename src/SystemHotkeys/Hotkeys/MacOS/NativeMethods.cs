@@ -2,9 +2,6 @@ using System.Runtime.InteropServices;
 
 namespace SystemHotkeys.Hotkeys.MacOS;
 
-/// <summary>
-/// Quartz event tap and CoreFoundation run loop P/Invoke surface.
-/// </summary>
 internal static partial class NativeMethods
 {
 	private const string CoreFoundation = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
@@ -25,13 +22,13 @@ internal static partial class NativeMethods
 	internal const uint kCGKeyboardEventAutorepeat = 8;
 	internal const uint kCGKeyboardEventKeycode = 9;
 
+	// A CFStringRef exported as data, not a function.
 	private static readonly Lazy<nint> _defaultRunLoopMode = new(() =>
 		Marshal.ReadIntPtr(NativeLibrary.GetExport(NativeLibrary.Load(CoreFoundation), "kCFRunLoopDefaultMode"))
 	);
 
 	internal delegate nint CGEventTapCallBack(nint proxy, uint type, nint cgEvent, nint userInfo);
 
-	/// <summary>The <c>kCFRunLoopDefaultMode</c> CFStringRef, a data export rather than a function.</summary>
 	internal static nint DefaultRunLoopMode => _defaultRunLoopMode.Value;
 
 	[LibraryImport(CoreGraphics)]

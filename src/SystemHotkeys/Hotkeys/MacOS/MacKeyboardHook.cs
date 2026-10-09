@@ -3,12 +3,7 @@ using Serilog;
 
 namespace SystemHotkeys.Hotkeys.MacOS;
 
-/// <summary>
-/// A Quartz event tap on its own CFRunLoop thread. An active tap (able to swallow a key) needs the
-/// Accessibility permission; without it the hook falls back to a listen-only tap, which needs Input
-/// Monitoring. With neither it keeps retrying, and it swaps taps whenever Accessibility is granted or
-/// revoked, so a permission change takes effect without a restart.
-/// </summary>
+// An active tap needs Accessibility, a listen-only one Input Monitoring.
 [SupportedOSPlatform("macos")]
 internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 {
@@ -17,11 +12,11 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 		| (1UL << (int)NativeMethods.kCGEventKeyUp)
 		| (1UL << (int)NativeMethods.kCGEventFlagsChanged);
 
-	// Short, because an active tap whose Accessibility was revoked freezes all input until it is removed.
+	// An active tap whose Accessibility was revoked freezes all input until it is removed.
 	private const double RunLoopSliceSeconds = 0.5;
 	private static readonly TimeSpan _retryInterval = TimeSpan.FromSeconds(5);
 
-	// Never disposed: it is reused across Start/Dispose cycles and never allocates a kernel wait handle.
+	// Reused across Start/Dispose cycles.
 	private readonly ManualResetEventSlim _stopping = new();
 
 	private NativeMethods.CGEventTapCallBack? _callback;
@@ -109,7 +104,7 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 		{
 			if (!_listenAccessRequested)
 			{
-				// Shows the system prompt once and lists Macro Deck under Input Monitoring.
+				// Lists Macro Deck under Input Monitoring.
 				_listenAccessRequested = true;
 				NativeMethods.CGRequestListenEventAccess();
 			}
@@ -133,8 +128,7 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 			0
 		);
 
-	// AXIsProcessTrusted kept answering false in a running process after Accessibility was granted, so the
-	// grant is tested by creating an active tap instead. Listening to no real event, it holds back no input.
+	// AXIsProcessTrusted stays false in a running process after Accessibility is granted.
 	private bool CanCreateActiveTap()
 	{
 		var probe = CreateTap(NativeMethods.kCGEventTapOptionDefault, 1UL << (int)NativeMethods.kCGEventNull);
@@ -149,7 +143,7 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 		return true;
 	}
 
-	// Runs in short slices because CFRunLoopStop is lost when it arrives before the loop is running.
+	// CFRunLoopStop is lost when it arrives before the loop runs.
 	private void RunUntilStoppedOrAccessibilityChanges()
 	{
 		while (!_stopping.IsSet)
@@ -212,12 +206,11 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 			case NativeMethods.kCGEventTapDisabledByUserInput:
 				if (_tapIsActive && !CanCreateActiveTap())
 				{
-					// Accessibility was revoked; re-enabling would freeze input again, so swap to listen-only.
+					// Accessibility was revoked: swap to listen-only.
 					NativeMethods.CFRunLoopStop(_runLoop);
 					return cgEvent;
 				}
 
-				// macOS turns off a tap whose callback was too slow; turn it back on rather than go deaf.
 				NativeMethods.CGEventTapEnable(_tap, true);
 				return cgEvent;
 
@@ -235,7 +228,6 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 		}
 	}
 
-	/// <returns><see langword="true"/> when the event must be swallowed.</returns>
 	private bool HandleKey(uint type, nint cgEvent)
 	{
 		var keyCode = (int)
@@ -250,8 +242,7 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 			return OnKeyUp(vkCode);
 		}
 
-		// A fresh press of a key still marked held means its key-up was never seen (Secure Event Input
-		// hides keys from every tap), so drop the stale state or this press would count as a repeat.
+		// Secure Event Input hides key-ups, so a fresh press may find the key still held.
 		if (NativeMethods.CGEventGetIntegerValueField(cgEvent, NativeMethods.kCGKeyboardEventAutorepeat) == 0)
 		{
 			OnKeyUp(vkCode);
@@ -260,8 +251,6 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 		return OnKeyDown(vkCode);
 	}
 
-	// Modifier state is read from every event's flags rather than tracked from key presses, so a modifier
-	// released while the tap could not see it never sticks.
 	private void SyncModifiers(nint cgEvent)
 	{
 		var flags = NativeMethods.CGEventGetFlags(cgEvent);

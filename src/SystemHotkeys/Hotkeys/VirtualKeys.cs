@@ -38,10 +38,16 @@ public static class VirtualKeys
     ];
 
     private static readonly IReadOnlyDictionary<int, string> _names = BuildNames();
+    private static readonly Dictionary<string, int> _codes = _names.ToDictionary(
+        entry => entry.Value,
+        entry => entry.Key
+    );
 
     public static bool IsModifier(int vkCode) => _modifierCodes.Contains(vkCode);
 
     public static string? NameOf(int vkCode) => _names.GetValueOrDefault(vkCode);
+
+    public static int? CodeOf(string name) => _codes.TryGetValue(name, out var vkCode) ? vkCode : null;
 
     private static Dictionary<int, string> BuildNames()
     {

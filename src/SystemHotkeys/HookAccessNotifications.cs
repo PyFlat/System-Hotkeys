@@ -4,15 +4,12 @@ using SystemHotkeys.Hotkeys;
 
 namespace SystemHotkeys;
 
-/// <summary>
-/// Tells the user which OS permission the keyboard hook is missing, and clears that again once granted.
-/// </summary>
 internal sealed class HookAccessNotifications
 {
 	private const string InputMonitoringKey = "input-monitoring-required";
 	private const string AccessibilityKey = "accessibility-required";
 
-	// UserNotificationRequest takes plain strings, so the plugin resolves its own text.
+	// UserNotificationRequest takes plain strings.
 	private static readonly LocalizationResolver _resolver = CreateResolver();
 
 	private readonly Lock _gate = new();

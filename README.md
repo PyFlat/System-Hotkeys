@@ -110,7 +110,8 @@ Deck, so the permission goes to **Macro Deck**, under **System Settings > Privac
   Without it hotkeys still fire, but the focused app sees the key too. The plugin shows a notification
   only once a trigger actually asks for suppression.
 
-The plugin retries every few seconds, so a newly granted permission takes effect without a restart. If
+The plugin checks again every few seconds, so a newly granted permission takes effect without a
+restart, and taking Accessibility away drops it back to watching only. If
 it does not, restart Macro Deck.
 
 Differences from Windows:

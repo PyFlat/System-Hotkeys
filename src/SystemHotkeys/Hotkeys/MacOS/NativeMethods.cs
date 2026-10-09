@@ -9,14 +9,13 @@ internal static partial class NativeMethods
 {
 	private const string CoreFoundation = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation";
 	private const string CoreGraphics = "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics";
-	private const string ApplicationServices =
-		"/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices";
 
 	internal const uint kCGSessionEventTap = 1;
 	internal const uint kCGHeadInsertEventTap = 0;
 	internal const uint kCGEventTapOptionDefault = 0;
 	internal const uint kCGEventTapOptionListenOnly = 1;
 
+	internal const uint kCGEventNull = 0;
 	internal const uint kCGEventKeyDown = 10;
 	internal const uint kCGEventKeyUp = 11;
 	internal const uint kCGEventFlagsChanged = 12;
@@ -57,10 +56,6 @@ internal static partial class NativeMethods
 	[LibraryImport(CoreGraphics)]
 	[return: MarshalAs(UnmanagedType.U1)]
 	internal static partial bool CGRequestListenEventAccess();
-
-	[LibraryImport(ApplicationServices)]
-	[return: MarshalAs(UnmanagedType.U1)]
-	internal static partial bool AXIsProcessTrusted();
 
 	[LibraryImport(CoreFoundation)]
 	internal static partial nint CFMachPortCreateRunLoopSource(nint allocator, nint port, nint order);

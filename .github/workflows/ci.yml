@@ -8,9 +8,13 @@ on:
 
 jobs:
   build-and-test:
-    # The keyboard hook is a Win32 SetWindowsHookExW P/Invoke, so the plugin only builds and runs its
-    # tests on Windows.
-    runs-on: windows-latest
+    # One runner per platform the manifest declares: the integration tests start the real keyboard hook,
+    # so this is where a backend that crashes on its own platform shows up.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4

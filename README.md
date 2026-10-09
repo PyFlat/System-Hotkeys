@@ -1,6 +1,6 @@
 # System Hotkeys
 
-A [Macro Deck 3](https://macro-deck.app/) plugin (Windows only) that installs a global keyboard hook and
+A [Macro Deck 3](https://macro-deck.app/) plugin for Windows and macOS that installs a global keyboard hook and
 publishes a `hotkey-pressed` event whenever a modifier+key combination is pressed anywhere on the
 machine - press Alt+F1 while the browser has focus, and Macro Deck still sees it. This is what Macro
 Deck 2's per-button hotkey assignment turns into in Macro Deck 3: bind any Automation or widget flow to
@@ -30,7 +30,7 @@ A key with no modifier is allowed. A bare non-typing key (a function or media ke
 hotkey; a bare letter or digit fires the trigger on **every** press of it anywhere on the machine, so
 reach for one only when that is genuinely what you want. A key your keyboard's own software rewrites
 (an `Fn` layer that turns `Fn+F4` into numpad `+`, for instance) reaches the plugin only as whatever it
-was rewritten to - `Fn` itself is never visible to Windows. The hook only observes: it never blocks or
+was rewritten to - `Fn` itself is never visible to the operating system. The hook only observes: it never blocks or
 alters a keystroke for any other application, unless you turn that on for a specific trigger - next.
 
 ## Keeping a hotkey from reaching other apps
@@ -54,14 +54,16 @@ combo(s).`. Check the log viewer first if suppression seems to have no effect - 
 many combos the plugin currently thinks it should intercept.
 
 A suppressed combo still publishes `hotkey-pressed` as usual - the toggle only decides what the rest of
-the system sees. Only the trailing key is intercepted (its key-down, Windows' own repeats of it while
-held, and its key-up); a modifier held as part of the combo, such as Ctrl or Shift, is never touched and
+the system sees. Only the trailing key is intercepted (its key-down, the operating system's own repeats
+of it while held, and its key-up); a modifier held as part of the combo, such as Ctrl or Shift, is never touched and
 keeps doing whatever it normally does elsewhere - which is why `Ctrl+Shift+F3` above only needs `F3`
 swallowed to stop leaking into the game. Swallowing a combo's own modifiers too (so a bind that uses a
 bare Ctrl or Shift, e.g., does not also trigger a game's crouch or sprint) is a further step this plugin
 does not take: doing it without adding input lag to every ordinary use of that modifier needs synthetic
 key-up correction after the fact, which is real added complexity worth reaching for only once an actual
 bind needs it.
+
+On macOS this needs the Accessibility permission - see [macOS](#macos) below.
 
 This works for the overwhelming majority of applications, games included - but a `WH_KEYBOARD_LL` hook is
 not guaranteed to reach every input path (a title using exclusive DirectInput or kernel-level anti-cheat
@@ -97,6 +99,31 @@ A press only publishes once per connected client when it has to - when at least 
 `hotkey-pressed` actually sets Device, Profile or Folder. A plain global hotkey, with nothing scoped
 anywhere, always publishes exactly once, no matter how many clients are connected.
 
+## macOS
+
+macOS only lets an app see keys pressed in other apps once you allow it. The plugin runs inside Macro
+Deck, so the permission goes to **Macro Deck**, under **System Settings > Privacy & Security**:
+
+- **Input Monitoring** is enough for hotkeys to fire. Without it nothing fires; the plugin shows a
+  notification saying so, and asks macOS to list Macro Deck there.
+- **Accessibility** is needed as well for [Also stop this key from reaching other apps](#keeping-a-hotkey-from-reaching-other-apps).
+  Without it hotkeys still fire, but the focused app sees the key too. The plugin shows a notification
+  only once a trigger actually asks for suppression.
+
+The plugin retries every few seconds, so a newly granted permission takes effect without a restart. If
+it does not, restart Macro Deck.
+
+Differences from Windows:
+
+- Command is `Meta` and Option is `Alt` in the combo editor, so record a combo rather than picking its
+  modifiers by hand if in doubt.
+- Keys are matched by their position on a US keyboard. On another layout a letter or punctuation key
+  may need to be picked by the US key in that position (on a German keyboard, `Z` and `Y` are swapped).
+- While a password field or another secure text field has focus, macOS hides every key from every app
+  that watches the keyboard, so no hotkey fires there.
+- Caps Lock and Fn can never be a combo's key.
+- Only Apple silicon Macs are supported.
+
 ## Privacy
 
 A global keyboard hook sees every key pressed on the machine, so here is exactly what this plugin does
@@ -116,8 +143,8 @@ published) and install it from Macro Deck's plugin manager.
 
 - .NET SDK 10.0
 - A running Macro Deck desktop app for [interactive debugging](#run-and-debug-against-macro-deck)
-- Windows - the keyboard hook is a `user32.dll` P/Invoke surface, so this plugin ships win-x64 only.
-  Contributions adding macOS or Linux support are very welcome.
+- Windows (win-x64) or macOS on Apple silicon (osx-arm64). Linux is not supported yet: Wayland gives an
+  app no way to watch global keys, so it needs a separate evdev backend.
 
 ## Quick start
 
@@ -135,7 +162,7 @@ Build and tests need no Macro Deck installation. For an interactive session, use
 The [Makefile](Makefile) wraps the everyday commands (`make` lists them): `make run` / `make watch`
 launch the plugin against the running Macro Deck through `macrodeck-plugin run` (pairing once, the
 credential kept in `src/SystemHotkeys/.macrodeck-dev-state/`), `make stub` against a stub host,
-`make cli` keeps the CLI at the SDK's version, `make pack` builds and inspects the win-x64 artifact, and
+`make cli` keeps the CLI at the SDK's version, `make pack` builds and inspects the artifact, and
 `make release` tests and packs, then tags the version in `manifest.json` and pushes - the tag starts the
 release workflow. `make release VERSION=x.y.z` does the same for another version, bumping and committing
 `manifest.json` first. Either refuses a version that is not newer than the latest release tag. On
@@ -146,14 +173,16 @@ Windows it needs GNU make and Git Bash's `sh` on `PATH`.
 ```
 src/SystemHotkeys/
   Program.cs             the host builder - a few lines and a RunAsync
-  manifest.json           identity, icon and the win-x64-only entrypoint
+  manifest.json           identity, icon and the win-x64 and osx-arm64 entrypoints
   macrodeck-build.json    how `macrodeck-plugin build` publishes it
   PluginIntegration.cs    the integration: the hotkey-pressed event, its combo and suppress-toggle
                           parameters, and reading them back through IEventPublisher.GetBindings
+  HookAccessNotifications.cs   tells the user which OS permission the hook is missing
   Hotkeys/                the keyboard hook itself
-    NativeMethods.cs        the WH_KEYBOARD_LL P/Invoke surface
-    GlobalKeyboardHook.cs   installs the hook, pumps its message loop, detects a completed combo,
-                            swallows a suppressed combo's trailing key
+    KeyboardHook.cs         the platform-neutral half: detects a completed combo, decides what a
+                            suppressed combo swallows, picks the backend for this OS
+    Windows/                the WH_KEYBOARD_LL hook and its message loop
+    MacOS/                  the Quartz event tap, its run loop, and kVK key code to virtual-key mapping
     HotkeyCombo.cs          held keys into the { modifiers, key } shape the combo editor stores
     VirtualKeys.cs          virtual-key code to editor key-token mapping
     BoundHotkeyCombos.cs    turns GetBindings() into the set of combos currently opted into suppression
@@ -307,7 +336,7 @@ real Kestrel server.
 
 | Command | What it does |
 | --- | --- |
-| `build` | Publishes the win-x64 runtime identifier using `macrodeck-build.json`, then packs the result. |
+| `build` | Publishes every runtime identifier in `macrodeck-build.json` (win-x64, osx-arm64), then packs the result. |
 | `validate` | Checks a manifest, version directory or artifact against the real manifest reader, the JSON Schema, the permission vocabulary and declared file digests. |
 | `inspect` | Reports what installing an artifact would find - entrypoints, permissions, dependencies, conflicts, compatibility, signature shape, size. |
 | `pack` | Builds a `.macroDeckPlugin` artifact, validating the manifest first and recomputing `files[]` digests. |
@@ -329,8 +358,8 @@ app instead; for debugging with breakpoints, use the launch profile above rather
 
 ### Packing a release
 
-`build` is the whole path: it reads `macrodeck-build.json`, publishes win-x64 into its `runtimes/win-x64/`
-slot and packs the artifact.
+`build` is the whole path: it reads `macrodeck-build.json`, publishes each runtime identifier into its
+`runtimes/<rid>/` slot and packs the artifact. Both are framework-dependent IL, so either OS builds both.
 
 ```bash
 macrodeck-plugin build --source src/SystemHotkeys --output ./artifacts
@@ -346,7 +375,7 @@ from `Localization/`. It cannot sign anything: sign *after* packing, against the
 digest will not match.
 
 A plain `dotnet build -c Release` does not produce a packable layout - the manifest points at
-`runtimes/win-x64/`, which only `build` assembles. Use `validate` against a built artifact or a version
+`runtimes/<rid>/`, which only `build` assembles. Use `validate` against a built artifact or a version
 directory rather than against `bin/Release/net10.0`.
 
 ### Conformance

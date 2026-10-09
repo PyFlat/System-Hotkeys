@@ -6,7 +6,8 @@ namespace SystemHotkeys.Hotkeys.MacOS;
 /// <summary>
 /// A Quartz event tap on its own CFRunLoop thread. An active tap (able to swallow a key) needs the
 /// Accessibility permission; without it the hook falls back to a listen-only tap, which needs Input
-/// Monitoring. With neither it keeps retrying, so granting a permission takes effect without a restart.
+/// Monitoring. With neither it keeps retrying, and it swaps taps whenever Accessibility is granted or
+/// revoked, so a permission change takes effect without a restart.
 /// </summary>
 [SupportedOSPlatform("macos")]
 internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
@@ -16,7 +17,8 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 		| (1UL << (int)NativeMethods.kCGEventKeyUp)
 		| (1UL << (int)NativeMethods.kCGEventFlagsChanged);
 
-	private const double RunLoopSliceSeconds = 1;
+	// Short, because an active tap whose Accessibility was revoked freezes all input until it is removed.
+	private const double RunLoopSliceSeconds = 0.5;
 	private static readonly TimeSpan _retryInterval = TimeSpan.FromSeconds(5);
 
 	// Never disposed: it is reused across Start/Dispose cycles and never allocates a kernel wait handle.
@@ -28,7 +30,7 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 	private volatile nint _runLoop;
 	private nint _tap;
 	private nint _source;
-	private bool _upgradeWhenTrusted;
+	private bool _tapIsActive;
 	private bool _listenAccessRequested;
 
 	internal override void Start()
@@ -82,7 +84,7 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 					continue;
 				}
 
-				RunUntilStoppedOrUpgradable();
+				RunUntilStoppedOrAccessibilityChanges();
 				RemoveTap();
 			}
 		}
@@ -96,12 +98,11 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 	private KeyboardHookAccess InstallTap()
 	{
 		_tap = CreateTap(NativeMethods.kCGEventTapOptionDefault);
-		var access = KeyboardHookAccess.Full;
+		_tapIsActive = _tap != 0;
 
 		if (_tap == 0)
 		{
 			_tap = CreateTap(NativeMethods.kCGEventTapOptionListenOnly);
-			access = KeyboardHookAccess.ObserveOnly;
 		}
 
 		if (_tap == 0)
@@ -116,35 +117,46 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 			return KeyboardHookAccess.Denied;
 		}
 
-		// Granting Accessibility later should upgrade the tap, but if it is already granted and the active
-		// tap still failed, re-checking would only rebuild the same listen-only tap every slice.
-		_upgradeWhenTrusted =
-			access == KeyboardHookAccess.ObserveOnly && !NativeMethods.AXIsProcessTrusted();
-
 		_source = NativeMethods.CFMachPortCreateRunLoopSource(0, _tap, 0);
 		NativeMethods.CFRunLoopAddSource(_runLoop, _source, NativeMethods.DefaultRunLoopMode);
 		NativeMethods.CGEventTapEnable(_tap, true);
-		return access;
+		return _tapIsActive ? KeyboardHookAccess.Full : KeyboardHookAccess.ObserveOnly;
 	}
 
-	private nint CreateTap(uint options) =>
+	private nint CreateTap(uint options, ulong eventsOfInterest = KeyboardEvents) =>
 		NativeMethods.CGEventTapCreate(
 			NativeMethods.kCGSessionEventTap,
 			NativeMethods.kCGHeadInsertEventTap,
 			options,
-			KeyboardEvents,
+			eventsOfInterest,
 			_callback!,
 			0
 		);
 
+	// AXIsProcessTrusted kept answering false in a running process after Accessibility was granted, so the
+	// grant is tested by creating an active tap instead. Listening to no real event, it holds back no input.
+	private bool CanCreateActiveTap()
+	{
+		var probe = CreateTap(NativeMethods.kCGEventTapOptionDefault, 1UL << (int)NativeMethods.kCGEventNull);
+		if (probe == 0)
+		{
+			return false;
+		}
+
+		NativeMethods.CGEventTapEnable(probe, false);
+		NativeMethods.CFMachPortInvalidate(probe);
+		NativeMethods.CFRelease(probe);
+		return true;
+	}
+
 	// Runs in short slices because CFRunLoopStop is lost when it arrives before the loop is running.
-	private void RunUntilStoppedOrUpgradable()
+	private void RunUntilStoppedOrAccessibilityChanges()
 	{
 		while (!_stopping.IsSet)
 		{
 			NativeMethods.CFRunLoopRunInMode(NativeMethods.DefaultRunLoopMode, RunLoopSliceSeconds, false);
 
-			if (_upgradeWhenTrusted && NativeMethods.AXIsProcessTrusted())
+			if (_tapIsActive != CanCreateActiveTap())
 			{
 				return;
 			}
@@ -198,6 +210,13 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 		{
 			case NativeMethods.kCGEventTapDisabledByTimeout:
 			case NativeMethods.kCGEventTapDisabledByUserInput:
+				if (_tapIsActive && !CanCreateActiveTap())
+				{
+					// Accessibility was revoked; re-enabling would freeze input again, so swap to listen-only.
+					NativeMethods.CFRunLoopStop(_runLoop);
+					return cgEvent;
+				}
+
 				// macOS turns off a tap whose callback was too slow; turn it back on rather than go deaf.
 				NativeMethods.CGEventTapEnable(_tap, true);
 				return cgEvent;

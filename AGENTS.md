@@ -89,10 +89,17 @@ Design knowledge that is not obvious from the code alone:
 - **A failed hook never takes the plugin down.** The conformance suite runs each declared platform on a CI
   runner with no keyboard access at all (no macOS permission granted), and it still has to pass. A
   backend logs and reports its `KeyboardHookAccess`; it never throws out of `Start`.
-- **macOS permissions decide what the tap can do.** `MacKeyboardHook` tries an active tap first (needs
-  Accessibility, can swallow), falls back to listen-only (needs Input Monitoring, cannot swallow), and with
-  neither reports `Denied` and retries every 5 seconds. TCC attributes both permissions to Macro Deck, the
-  responsible process, not to the plugin's `dotnet`. `PluginIntegration` turns the access level into a
+- **macOS permissions decide what the tap can do, and can change under a running tap.**
+  `MacKeyboardHook` tries an active tap first (needs Accessibility, can swallow), falls back to listen-only
+  (needs Input Monitoring, cannot swallow), and with neither reports `Denied` and retries every 5 seconds.
+  Every half-second slice it probes whether an active tap can still be created and reinstalls the tap when
+  that answer changes: a grant upgrades without a restart, and a revocation must be noticed because an
+  active tap whose Accessibility was taken away freezes all keyboard and mouse input. The probe is a
+  throwaway active tap listening only to `kCGEventNull`, because `AXIsProcessTrusted` kept reporting
+  false in a running process after a grant.
+- **TCC attributes macOS permissions to the responsible process.** That is Macro Deck for an installed
+  plugin, not the plugin's `dotnet`, but the terminal app (VS Code, Terminal) for one started with
+  `make run`/`make watch`, so test a permission change by toggling that app. `PluginIntegration` turns the access level into a
   notification: `Denied` always, `ObserveOnly` only while some binding asks for suppression.
   `UserNotificationRequest` takes plain strings, so `HookAccessNotifications` resolves the `Strings` keys
   itself through its own `LocalizationResolver`.

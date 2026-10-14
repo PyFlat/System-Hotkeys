@@ -118,11 +118,9 @@ Differences from Windows:
 
 - Command is `Meta` and Option is `Alt` in the combo editor, so record a combo rather than picking its
   modifiers by hand if in doubt.
-- Keys are matched by their position on a US keyboard. On another layout a letter or punctuation key
-  may need to be picked by the US key in that position (on a German keyboard, `Z` and `Y` are swapped).
 - While a password field or another secure text field has focus, macOS hides every key from every app
   that watches the keyboard, so no hotkey fires there.
-- Caps Lock and Fn can never be a combo's key.
+- Caps Lock, Fn, `F21`-`F24` and the media keys can never be a combo's key.
 - Only Apple silicon Macs are supported.
 
 ## Privacy
@@ -183,9 +181,8 @@ src/SystemHotkeys/
     KeyboardHook.cs         the platform-neutral half: detects a completed combo, decides what a
                             suppressed combo swallows, picks the backend for this OS
     Windows/                the WH_KEYBOARD_LL hook and its message loop
-    MacOS/                  the Quartz event tap, its run loop, and kVK key code to virtual-key mapping
+    MacOS/                  the Quartz event tap and its run loop
     HotkeyCombo.cs          held keys into the { modifiers, key } shape the combo editor stores
-    VirtualKeys.cs          virtual-key code to editor key-token mapping
     BoundHotkeyCombos.cs    turns GetBindings() into the set of combos currently opted into suppression
   Localization/Strings.resx   the default-culture strings, one file per language
   Assets/icon.svg         the icon the manifest declares

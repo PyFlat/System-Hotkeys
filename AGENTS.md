@@ -30,10 +30,8 @@ src/SystemHotkeys/
     KeyboardHook.cs           the platform-neutral half: held keys, combo detection, which key events a
                                suppressed combo swallows, the access level, and the per-OS factory
     Windows/                  WindowsKeyboardHook (WH_KEYBOARD_LL plus its message loop) and its P/Invoke
-    MacOS/                    MacKeyboardHook (Quartz event tap on a CFRunLoop thread), its P/Invoke, and
-                               MacKeyCodes (kVK key code and modifier flag to virtual-key code)
+    MacOS/                    MacKeyboardHook (Quartz event tap on a CFRunLoop thread) and its P/Invoke
     HotkeyCombo.cs            held keys into the { modifiers, key } shape the combo editor stores
-    VirtualKeys.cs            virtual-key code to editor key-token mapping
     BoundHotkeyCombos.cs      turns GetBindings() into the set of combos currently opted into
                                suppression
     HotkeyPressedPayloads.cs  builds the payload(s) a single press publishes
@@ -72,17 +70,20 @@ Design knowledge that is not obvious from the code alone:
   than an id nobody recognises. Undocumented and unverified against a real host from here, so it could
   stop resolving without notice on a future host; check the picker still offers real device names after
   any host update.
-- **`VirtualKeys` is deliberately not exhaustive.** A virtual-key code with no entry in `_names` is simply
-  never recognised as a combo's trailing key - the safe default for a key nobody has asked to bind yet,
-  not a bug to "complete". Every numpad key is named `Numpad*` (digits, Add, Subtract, Multiply,
-  Divide, Decimal), which is what Macro Deck's combo recorder stores for it, so Record and Select agree.
-- **Combo matching is case- and order-insensitive.** `BoundHotkeyCombos.NormalizedKey` upper-cases the key
-  and sorts its modifiers before comparing, so `Shift+Ctrl+F3` and `ctrl+shift+f3` are the same combo.
+- **Key names come from the SDK, never from a table of our own.** A backend translates its native code with
+  `MacroDeck.Sdk.Input.NativeKeys` (`FromWindows(vk, scanCode, isExtended)`, `FromMacOs`) and hands
+  `KeyboardHook` a `KeyCode`; `KeyNames.ToName` and `ToModifierNames` produce exactly what the combo editor
+  stores (Macro Deck ADR 0104: letters by layout label, digits and punctuation by position, `Minus`,
+  `IntlBackslash`, `NumpadEnter`). A key the SDK returns `KeyCode.None` for is ignored.
+- **Right-hand modifiers publish the generic name.** The editor only stores `RightCtrl` and friends for the
+  host's own keyboard actions, never for event triggers, so `HotkeyCombo.Create` folds every right-hand
+  modifier into `Ctrl`/`Shift`/`Alt`/`Meta` before naming it.
+- **Combo matching follows the host's trigger matching.** `BoundHotkeyCombos.NormalizedKey` resolves key and
+  modifier names through `KeyNames.TryParse`/`TryParseModifier`, because `GetBindings()` returns whatever
+  spelling the editor stored (`-`, `Esc`, `Cmd`, ...). Unknown names compare case-insensitively as text.
 - **No config flow.** Every setting lives on the `hotkey-pressed` trigger itself (Device/Profile/Folder
   scope, the suppress toggle), so the integration starts enabled immediately rather than waiting on setup.
-- **Every backend speaks Windows virtual-key codes.** A backend translates its native key codes into VK
-  codes before calling `KeyboardHook`, so `HotkeyCombo`, `VirtualKeys` and `BoundHotkeyCombos` stay
-  platform-neutral and a new platform is one key table plus an event source. A backend file is marked
+- **A new platform is an event source plus an SDK lookup.** A backend file is marked
   `[SupportedOSPlatform]` and only `KeyboardHook.Create` picks one, behind an `OperatingSystem.Is*` guard.
   An OS with no backend gets a hook that only logs a warning; it must never throw, because the
   integration is constructed during `Build()`.
@@ -108,10 +109,9 @@ Design knowledge that is not obvious from the code alone:
   modifier released while the tap was blind (Secure Event Input) cannot stick. A non-repeat key-down of a
   key still marked held clears that stale state first, for the same reason. Command is `Meta`, Option is
   `Alt`.
-- **`MacKeyCodes` is positional.** A `kVK_*` code is a key position on a US ANSI keyboard, not the
-  character the active layout puts there, so on a non-US layout some letters and punctuation do not match
-  what the combo recorder stores. A layout-aware lookup (`UCKeyTranslate`) would fix that; until then the
-  README documents it. Caps Lock and Fn are deliberately unmapped.
+- **`NativeKeys.FromMacOs` reads the active input source from the event tap thread.** Apple documents the
+  Text Input Sources API for the main thread and the SDK only tested it from a thread-pool thread, so check
+  letters on a non-US layout (German `Z`/`Y`) after any change to the tap or an SDK update.
 - **Linux is not declared yet.** Wayland offers no global key observation, so a Linux backend would read
   evdev (`/dev/input`, user in the `input` group). Swallowing a key there means grabbing the whole
   keyboard and re-emitting every other key through uinput, or the XDG GlobalShortcuts portal.

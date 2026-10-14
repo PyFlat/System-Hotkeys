@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using MacroDeck.Sdk.Input;
 using Serilog;
 
 namespace SystemHotkeys.Hotkeys.Windows;
@@ -81,15 +82,12 @@ internal sealed class WindowsKeyboardHook(ILogger logger) : KeyboardHook(logger)
 
     private nint HookCallback(int nCode, nint wParam, nint lParam)
     {
-        if (nCode >= 0)
+        if (nCode >= 0 && KeyOf(lParam) is var key and not KeyCode.None)
         {
-            var data = Marshal.PtrToStructure<NativeMethods.KbdLlHookStruct>(lParam);
-            var vkCode = (int)data.VkCode;
-
             var swallow = wParam switch
             {
-                NativeMethods.WM_KEYDOWN or NativeMethods.WM_SYSKEYDOWN => OnKeyDown(vkCode),
-                NativeMethods.WM_KEYUP or NativeMethods.WM_SYSKEYUP => OnKeyUp(vkCode),
+                NativeMethods.WM_KEYDOWN or NativeMethods.WM_SYSKEYDOWN => OnKeyDown(key),
+                NativeMethods.WM_KEYUP or NativeMethods.WM_SYSKEYUP => OnKeyUp(key),
                 _ => false,
             };
             if (swallow)
@@ -99,5 +97,15 @@ internal sealed class WindowsKeyboardHook(ILogger logger) : KeyboardHook(logger)
         }
 
         return NativeMethods.CallNextHookEx(0, nCode, wParam, lParam);
+    }
+
+    private static KeyCode KeyOf(nint lParam)
+    {
+        var data = Marshal.PtrToStructure<NativeMethods.KbdLlHookStruct>(lParam);
+        return NativeKeys.FromWindows(
+            (int)data.VkCode,
+            (int)data.ScanCode,
+            (data.Flags & NativeMethods.LLKHF_EXTENDED) != 0
+        );
     }
 }

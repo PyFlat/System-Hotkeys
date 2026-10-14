@@ -1,4 +1,5 @@
 using System.Runtime.Versioning;
+using MacroDeck.Sdk.Input;
 using Serilog;
 
 namespace SystemHotkeys.Hotkeys.MacOS;
@@ -15,6 +16,19 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 	// An active tap whose Accessibility was revoked freezes all input until it is removed.
 	private const double RunLoopSliceSeconds = 0.5;
 	private static readonly TimeSpan _retryInterval = TimeSpan.FromSeconds(5);
+
+	// The device-dependent CGEventFlags bits, the only ones that tell left from right.
+	private static readonly (KeyModifier Modifier, ulong FlagMask)[] _modifierFlags =
+	[
+		(KeyModifier.Control, 0x00000001),
+		(KeyModifier.Shift, 0x00000002),
+		(KeyModifier.RightShift, 0x00000004),
+		(KeyModifier.Meta, 0x00000008),
+		(KeyModifier.RightMeta, 0x00000010),
+		(KeyModifier.Alt, 0x00000020),
+		(KeyModifier.RightAlt, 0x00000040),
+		(KeyModifier.RightControl, 0x00002000),
+	];
 
 	// Reused across Start/Dispose cycles.
 	private readonly ManualResetEventSlim _stopping = new();
@@ -232,31 +246,32 @@ internal sealed class MacKeyboardHook(ILogger logger) : KeyboardHook(logger)
 	{
 		var keyCode = (int)
 			NativeMethods.CGEventGetIntegerValueField(cgEvent, NativeMethods.kCGKeyboardEventKeycode);
-		if (MacKeyCodes.ToVirtualKey(keyCode) is not { } vkCode)
+		var key = NativeKeys.FromMacOs(keyCode);
+		if (key == KeyCode.None)
 		{
 			return false;
 		}
 
 		if (type == NativeMethods.kCGEventKeyUp)
 		{
-			return OnKeyUp(vkCode);
+			return OnKeyUp(key);
 		}
 
 		// Secure Event Input hides key-ups, so a fresh press may find the key still held.
 		if (NativeMethods.CGEventGetIntegerValueField(cgEvent, NativeMethods.kCGKeyboardEventAutorepeat) == 0)
 		{
-			OnKeyUp(vkCode);
+			OnKeyUp(key);
 		}
 
-		return OnKeyDown(vkCode);
+		return OnKeyDown(key);
 	}
 
 	private void SyncModifiers(nint cgEvent)
 	{
 		var flags = NativeMethods.CGEventGetFlags(cgEvent);
-		foreach (var (vkCode, flagMask) in MacKeyCodes.ModifierFlags)
+		foreach (var (modifier, flagMask) in _modifierFlags)
 		{
-			SetModifierHeld(vkCode, (flags & flagMask) != 0);
+			SetModifierHeld(modifier, (flags & flagMask) != 0);
 		}
 	}
 }

@@ -242,6 +242,24 @@ public sealed class BoundHotkeyCombosTests
         Assert.That(suppressed.Contains(new HotkeyCombo(["Ctrl", "Shift"], "F3")), Is.True);
     }
 
+    [TestCase("-", "Minus")]
+    [TestCase("Esc", "Escape")]
+    [TestCase("D5", "5")]
+    public void An_older_key_spelling_matches_the_published_name(string stored, string published)
+    {
+        var suppressed = FromBindings(Binding(EventId, Combo(["Ctrl"], stored), Bool(true)));
+
+        Assert.That(suppressed.Contains(new HotkeyCombo(["Ctrl"], published)), Is.True);
+    }
+
+    [Test]
+    public void An_older_modifier_spelling_matches_the_published_name()
+    {
+        var suppressed = FromBindings(Binding(EventId, Combo(["Cmd", "Option"], "K"), Bool(true)));
+
+        Assert.That(suppressed.Contains(new HotkeyCombo(["Alt", "Meta"], "K")), Is.True);
+    }
+
     [Test]
     public void A_combo_with_extra_or_missing_modifiers_is_not_contained()
     {

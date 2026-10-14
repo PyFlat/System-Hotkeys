@@ -13,6 +13,7 @@ internal static partial class NativeMethods
 	internal const int WM_SYSKEYDOWN = 0x0104;
 	internal const int WM_SYSKEYUP = 0x0105;
 	internal const int WM_QUIT = 0x0012;
+	internal const uint LLKHF_EXTENDED = 0x01;
 
 	internal delegate nint LowLevelKeyboardProc(int nCode, nint wParam, nint lParam);
 

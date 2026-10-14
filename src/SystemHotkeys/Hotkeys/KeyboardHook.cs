@@ -1,16 +1,17 @@
 using System.Runtime.InteropServices;
+using MacroDeck.Sdk.Input;
 using Serilog;
 using SystemHotkeys.Hotkeys.MacOS;
 using SystemHotkeys.Hotkeys.Windows;
 
 namespace SystemHotkeys.Hotkeys;
 
-// Platform backends feed this Windows virtual-key codes.
 internal abstract class KeyboardHook : IDisposable
 {
 	private readonly Lock _gate = new();
-	private readonly HashSet<int> _heldKeys = [];
-	private readonly HashSet<int> _swallowedKeys = [];
+	private readonly HashSet<KeyCode> _heldKeys = [];
+	private readonly HashSet<KeyCode> _swallowedKeys = [];
+	private KeyModifier _heldModifiers;
 
 	private volatile BoundHotkeyCombos _suppressed = BoundHotkeyCombos.None;
 	private volatile KeyboardHookAccess _access = KeyboardHookAccess.Pending;
@@ -58,25 +59,26 @@ internal abstract class KeyboardHook : IDisposable
 	}
 
 	// True when the key must not reach other applications.
-	protected bool OnKeyDown(int vkCode)
+	protected bool OnKeyDown(KeyCode key)
 	{
-		bool isNewPress;
-		HashSet<int> snapshot;
-		lock (_gate)
+		if (KeyNames.TryGetModifier(key, out var modifier))
 		{
-			isNewPress = _heldKeys.Add(vkCode);
-			snapshot = [.. _heldKeys];
-
-			if (!isNewPress)
-			{
-				return _swallowedKeys.Contains(vkCode);
-			}
-		}
-
-		if (HotkeyCombo.TryCreate(snapshot, vkCode) is not { } combo)
-		{
+			SetModifierHeld(modifier, true);
 			return false;
 		}
+
+		KeyModifier modifiers;
+		lock (_gate)
+		{
+			if (!_heldKeys.Add(key))
+			{
+				return _swallowedKeys.Contains(key);
+			}
+
+			modifiers = _heldModifiers;
+		}
+
+		var combo = HotkeyCombo.Create(modifiers, key);
 
 		Logger.Debug("Detected hotkey {Combo}.", combo.Text);
 		HotkeyPressed?.Invoke(combo);
@@ -93,34 +95,33 @@ internal abstract class KeyboardHook : IDisposable
 
 		lock (_gate)
 		{
-			_swallowedKeys.Add(vkCode);
+			_swallowedKeys.Add(key);
 		}
 
 		return true;
 	}
 
-	protected bool OnKeyUp(int vkCode)
+	protected bool OnKeyUp(KeyCode key)
 	{
+		if (KeyNames.TryGetModifier(key, out var modifier))
+		{
+			SetModifierHeld(modifier, false);
+			return false;
+		}
+
 		lock (_gate)
 		{
-			_heldKeys.Remove(vkCode);
-			return _swallowedKeys.Remove(vkCode);
+			_heldKeys.Remove(key);
+			return _swallowedKeys.Remove(key);
 		}
 	}
 
 	// For a platform that reports modifier state rather than modifier key presses.
-	protected void SetModifierHeld(int vkCode, bool held)
+	protected void SetModifierHeld(KeyModifier modifier, bool held)
 	{
 		lock (_gate)
 		{
-			if (held)
-			{
-				_heldKeys.Add(vkCode);
-			}
-			else
-			{
-				_heldKeys.Remove(vkCode);
-			}
+			_heldModifiers = held ? _heldModifiers | modifier : _heldModifiers & ~modifier;
 		}
 	}
 

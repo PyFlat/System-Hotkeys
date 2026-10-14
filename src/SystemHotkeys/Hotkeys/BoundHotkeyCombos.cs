@@ -1,4 +1,5 @@
 using System.Text.Json;
+using MacroDeck.Sdk.Input;
 using MacroDeck.Sdk.Decks;
 using MacroDeck.Sdk.Events;
 using Serilog;
@@ -185,15 +186,27 @@ public sealed class BoundHotkeyCombos
         return true;
     }
 
+    // Same rule as the host's trigger matching: known spellings resolve, unknown ones compare as text.
     private static (string Key, string Modifiers) NormalizedKey(
         IEnumerable<string> modifiers,
         string key
-    ) =>
-        (
-            key.ToUpperInvariant(),
-            string.Join(
-                ',',
-                modifiers.Select(m => m.ToUpperInvariant()).OrderBy(m => m, StringComparer.Ordinal)
-            )
-        );
+    )
+    {
+        var known = KeyModifier.None;
+        var unknown = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var modifier in modifiers)
+        {
+            if (KeyNames.TryParseModifier(modifier, out var resolved))
+            {
+                known |= resolved;
+            }
+            else
+            {
+                unknown.Add(modifier.ToUpperInvariant());
+            }
+        }
+
+        var keyName = KeyNames.TryParse(key, out var code) ? code.ToString() : key.ToUpperInvariant();
+        return (keyName, $"{known}+{string.Join(',', unknown)}");
+    }
 }

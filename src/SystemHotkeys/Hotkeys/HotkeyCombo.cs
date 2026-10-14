@@ -1,36 +1,31 @@
+using MacroDeck.Sdk.Input;
+
 namespace SystemHotkeys.Hotkeys;
 
 public sealed record HotkeyCombo(IReadOnlyList<string> Modifiers, string Key)
 {
-    private static readonly (int Left, int Right, string Name)[] _modifiers =
+    private static readonly (KeyModifier Right, KeyModifier Either)[] _sides =
     [
-        (VirtualKeys.LControl, VirtualKeys.RControl, "Ctrl"),
-        (VirtualKeys.LShift, VirtualKeys.RShift, "Shift"),
-        (VirtualKeys.LMenu, VirtualKeys.RMenu, "Alt"),
-        (VirtualKeys.LWin, VirtualKeys.RWin, "Meta"),
+        (KeyModifier.RightControl, KeyModifier.Control),
+        (KeyModifier.RightShift, KeyModifier.Shift),
+        (KeyModifier.RightAlt, KeyModifier.Alt),
+        (KeyModifier.RightMeta, KeyModifier.Meta),
     ];
 
     public string Text => string.Join('+', [.. Modifiers, Key]);
 
-    public static HotkeyCombo? TryCreate(IReadOnlySet<int> heldKeys, int vkCode)
+    // Event trigger fields never store right-hand modifier names, so either side counts as the generic one.
+    public static HotkeyCombo Create(KeyModifier heldModifiers, KeyCode key)
     {
-        if (VirtualKeys.IsModifier(vkCode))
+        var generic = heldModifiers;
+        foreach (var (right, either) in _sides)
         {
-            return null;
+            if (generic.HasFlag(right))
+            {
+                generic = (generic & ~right) | either;
+            }
         }
 
-        if (VirtualKeys.NameOf(vkCode) is not { } keyName)
-        {
-            return null;
-        }
-
-        var modifiers = _modifiers
-            .Where(modifier =>
-                heldKeys.Contains(modifier.Left) || heldKeys.Contains(modifier.Right)
-            )
-            .Select(modifier => modifier.Name)
-            .ToArray();
-
-        return new HotkeyCombo(modifiers, keyName);
+        return new HotkeyCombo(KeyNames.ToModifierNames(generic), KeyNames.ToName(key));
     }
 }

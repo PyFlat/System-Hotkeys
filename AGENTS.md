@@ -4,7 +4,8 @@ This file must be kept up to date. When a rule here stops matching reality, or a
 work in this repository, update this file as part of that change rather than leaving it to drift.
 
 This folder is **System Hotkeys** (`manifest.json` `name`), a Macro Deck 3 out-of-process plugin
-(Windows only) that installs a global `WH_KEYBOARD_LL` keyboard hook and publishes a `hotkey-pressed`
+(Windows and macOS) that installs a global keyboard hook (`WH_KEYBOARD_LL` on Windows, a Quartz event tap
+on macOS) and publishes a `hotkey-pressed`
 event whenever a modifier+key combination is pressed anywhere on the machine, so any Automation or
 widget flow can bind to a system-wide hotkey. The hook is passive by default; a trigger can opt in to
 also swallowing its combo's trailing key, and can scope itself to one device, profile and/or folder.
@@ -19,17 +20,18 @@ package itself is covered by
 ```
 src/SystemHotkeys/
   Program.cs               builder chain - a few lines and a RunAsync
-  manifest.json             identity, icon, win-x64 entrypoint
-  macrodeck-build.json      the win-x64 publish target (framework-dependent)
+  manifest.json             identity, icon, win-x64 and osx-arm64 entrypoints
+  macrodeck-build.json      one publish target per entrypoint (framework-dependent)
   PluginIntegration.cs      IPluginIntegration + IEventProvider + IDynamicEventOptionsProvider: the
                              hotkey-pressed event, its combo/suppress/scope parameters, and reading
                              bound triggers back through IEventPublisher.GetBindings
+  HookAccessNotifications.cs  shows or clears a notification for each OS permission the hook lacks
   Hotkeys/                  the keyboard hook itself
-    NativeMethods.cs          the WH_KEYBOARD_LL P/Invoke surface
-    GlobalKeyboardHook.cs     installs the hook, pumps its message loop, detects a completed combo,
-                               swallows a suppressed combo's trailing key
+    KeyboardHook.cs           the platform-neutral half: held keys, combo detection, which key events a
+                               suppressed combo swallows, the access level, and the per-OS factory
+    Windows/                  WindowsKeyboardHook (WH_KEYBOARD_LL plus its message loop) and its P/Invoke
+    MacOS/                    MacKeyboardHook (Quartz event tap on a CFRunLoop thread) and its P/Invoke
     HotkeyCombo.cs            held keys into the { modifiers, key } shape the combo editor stores
-    VirtualKeys.cs            virtual-key code to editor key-token mapping
     BoundHotkeyCombos.cs      turns GetBindings() into the set of combos currently opted into
                                suppression
     HotkeyPressedPayloads.cs  builds the payload(s) a single press publishes
@@ -45,9 +47,9 @@ tests/SystemHotkeys.Tests/
 
 Design knowledge that is not obvious from the code alone:
 
-- **The hook only ever observes unless a bound trigger opted into suppression.** Every path in
-  `GlobalKeyboardHook.HookCallback` falls through to `CallNextHookEx` except a key-down/repeat/key-up
-  that matches a combo currently in `BoundHotkeyCombos`. Only the combo's trailing key is swallowed -
+- **The hook only ever observes unless a bound trigger opted into suppression.** `KeyboardHook.OnKeyDown`
+  and `OnKeyUp` return `true` only for a key-down/repeat/key-up that matches a combo currently in
+  `BoundHotkeyCombos`; every backend passes everything else on untouched. Only the combo's trailing key is swallowed -
   never its modifiers - so a bind that uses a bare Ctrl or Shift never also eats whatever else that
   modifier does elsewhere. `BoundHotkeyCombos.FromBindings` is the single place that decides "currently
   bound and suppressed", rebuilt from scratch on every `Events.BindingsChanged`.
@@ -68,20 +70,57 @@ Design knowledge that is not obvious from the code alone:
   than an id nobody recognises. Undocumented and unverified against a real host from here, so it could
   stop resolving without notice on a future host; check the picker still offers real device names after
   any host update.
-- **`VirtualKeys` is deliberately not exhaustive.** A virtual-key code with no entry in `_names` is simply
-  never recognised as a combo's trailing key - the safe default for a key nobody has asked to bind yet,
-  not a bug to "complete". Every numpad key is named `Numpad*` (digits, Add, Subtract, Multiply,
-  Divide, Decimal), which is what Macro Deck's combo recorder stores for it, so Record and Select agree.
-- **Combo matching is case- and order-insensitive.** `BoundHotkeyCombos.NormalizedKey` upper-cases the key
-  and sorts its modifiers before comparing, so `Shift+Ctrl+F3` and `ctrl+shift+f3` are the same combo.
+- **Key names come from the SDK, never from a table of our own.** A backend translates its native code with
+  `MacroDeck.Sdk.Input.NativeKeys` (`FromWindows(vk, scanCode, isExtended)`, `FromMacOs`) and hands
+  `KeyboardHook` a `KeyCode`; `KeyNames.ToName` and `ToModifierNames` produce exactly what the combo editor
+  stores (Macro Deck ADR 0104: letters by layout label, digits and punctuation by position, `Minus`,
+  `IntlBackslash`, `NumpadEnter`). A key the SDK returns `KeyCode.None` for is ignored.
+- **Right-hand modifiers publish the generic name.** The editor only stores `RightCtrl` and friends for the
+  host's own keyboard actions, never for event triggers, so `HotkeyCombo.Create` folds every right-hand
+  modifier into `Ctrl`/`Shift`/`Alt`/`Meta` before naming it.
+- **Combo matching follows the host's trigger matching.** `BoundHotkeyCombos.NormalizedKey` resolves key and
+  modifier names through `KeyNames.TryParse`/`TryParseModifier`, because `GetBindings()` returns whatever
+  spelling the editor stored (`-`, `Esc`, `Cmd`, ...). Unknown names compare case-insensitively as text.
 - **No config flow.** Every setting lives on the `hotkey-pressed` trigger itself (Device/Profile/Folder
   scope, the suppress toggle), so the integration starts enabled immediately rather than waiting on setup.
-- **Windows only, framework-dependent.** The keyboard hook is a `user32.dll`/`kernel32.dll` P/Invoke
-  surface, so only `win-x64` is declared in `manifest.json`/`macrodeck-build.json`. The entrypoint names
-  `runtimes/win-x64/SystemHotkeys.dll` with `"runtime": { "kind": "FrameworkDependent", "dotnetVersion":
+- **A new platform is an event source plus an SDK lookup.** A backend file is marked
+  `[SupportedOSPlatform]` and only `KeyboardHook.Create` picks one, behind an `OperatingSystem.Is*` guard.
+  An OS with no backend gets a hook that only logs a warning; it must never throw, because the
+  integration is constructed during `Build()`.
+- **A failed hook never takes the plugin down.** The conformance suite runs each declared platform on a CI
+  runner with no keyboard access at all (no macOS permission granted), and it still has to pass. A
+  backend logs and reports its `KeyboardHookAccess`; it never throws out of `Start`.
+- **macOS permissions decide what the tap can do, and can change under a running tap.**
+  `MacKeyboardHook` tries an active tap first (needs Accessibility, can swallow), falls back to listen-only
+  (needs Input Monitoring, cannot swallow), and with neither reports `Denied` and retries every 5 seconds.
+  Every half-second slice it probes whether an active tap can still be created and reinstalls the tap when
+  that answer changes: a grant upgrades without a restart, and a revocation must be noticed because an
+  active tap whose Accessibility was taken away freezes all keyboard and mouse input. The probe is a
+  throwaway active tap listening only to `kCGEventNull`, because `AXIsProcessTrusted` kept reporting
+  false in a running process after a grant.
+- **TCC attributes macOS permissions to the responsible process.** That is Macro Deck for an installed
+  plugin, not the plugin's `dotnet`, but the terminal app (VS Code, Terminal) for one started with
+  `make run`/`make watch`, so test a permission change by toggling that app. `PluginIntegration` turns the access level into a
+  notification: `Denied` always, `ObserveOnly` only while some binding asks for suppression.
+  `UserNotificationRequest` takes plain strings, so `HookAccessNotifications` resolves the `Strings` keys
+  itself through its own `LocalizationResolver`.
+- **macOS modifiers come from the event flags, not from key presses.** Every key event resyncs the held
+  modifiers from the device-dependent `CGEventFlags` bits (the only part that tells left from right), so a
+  modifier released while the tap was blind (Secure Event Input) cannot stick. A non-repeat key-down of a
+  key still marked held clears that stale state first, for the same reason. Command is `Meta`, Option is
+  `Alt`.
+- **`NativeKeys.FromMacOs` reads the active input source from the event tap thread.** Apple documents the
+  Text Input Sources API for the main thread and the SDK only tested it from a thread-pool thread, so check
+  letters on a non-US layout (German `Z`/`Y`) after any change to the tap or an SDK update.
+- **Linux is not declared yet.** Wayland offers no global key observation, so a Linux backend would read
+  evdev (`/dev/input`, user in the `input` group). Swallowing a key there means grabbing the whole
+  keyboard and re-emitting every other key through uinput, or the XDG GlobalShortcuts portal.
+- **Framework-dependent on every platform.** Each entrypoint names `runtimes/<rid>/SystemHotkeys.dll`
+  with `"runtime": { "kind": "FrameworkDependent", "dotnetVersion":
   "10.0" }`, and `macrodeck-build.json` publishes with `--self-contained false -p:UseAppHost=false` to
   match - Macro Deck ships the .NET 10 runtime with the host, so the artifact carries only this plugin's
-  own assemblies. Keep the manifest and `macrodeck-build.json` on the same pairing; mixing them fails
+  own assemblies. The DLL is plain IL, so one machine builds every platform. Keep the manifest and
+  `macrodeck-build.json` on the same pairing, with one target per entrypoint; mixing them fails
   validation.
 
 Authoritative upstream documentation, in the
@@ -388,18 +427,18 @@ macrodeck-plugin build --source src/SystemHotkeys --output ./artifacts
 macrodeck-plugin inspect --artifact ./artifacts/<id>-<version>.macroDeckPlugin
 ```
 
-`build` reads `macrodeck-build.json`, publishes the win-x64 runtime identifier into its `runtimes/win-x64/`
-slot and packs the result.
+`build` reads `macrodeck-build.json`, publishes each runtime identifier (win-x64, osx-arm64) into its
+`runtimes/<rid>/` slot and packs the result.
 
-A `dotnet build -c Release` output is *not* packable: the manifest points at `runtimes/win-x64/`, which
+A `dotnet build -c Release` output is *not* packable: the manifest points at `runtimes/<rid>/`, which
 only `build` assembles, so `validate`/`pack` against `bin/Release/net10.0` fails on a missing entrypoint.
 
-This plugin is **framework-dependent**: the entrypoint names `runtimes/win-x64/SystemHotkeys.dll` with
+This plugin is **framework-dependent**: each entrypoint names `runtimes/<rid>/SystemHotkeys.dll` with
 `"runtime": { "kind": "FrameworkDependent", "dotnetVersion": "10.0" }`, and `macrodeck-build.json`
 publishes with `--self-contained false -p:UseAppHost=false`. Macro Deck ships a .NET 10 runtime (ASP.NET
 Core included) with the host and runs the plugin on it, which is also why it appears as `dotnet` in
 process lists. Going self-contained would mean removing the `runtime` block, pointing `executable` at
-the apphost (`SystemHotkeys.exe`, no `.dll`) and publishing with `--self-contained true` - keep the
+the apphost (`SystemHotkeys.exe` on Windows, `SystemHotkeys` on macOS) and publishing with `--self-contained true` - keep the
 manifest and `macrodeck-build.json` on the same pairing, since mixing them fails validation.
 
 Packing validates first, recomputes every `files[]` digest from disk and fills in `languages` from

@@ -1,5 +1,6 @@
-using SystemHotkeys.Hotkeys;
+using MacroDeck.Sdk.Input;
 using NUnit.Framework;
+using SystemHotkeys.Hotkeys;
 
 namespace SystemHotkeys.Tests.Hotkeys;
 
@@ -7,123 +8,63 @@ namespace SystemHotkeys.Tests.Hotkeys;
 public sealed class HotkeyComboTests
 {
     private static readonly string[] _ctrl = ["Ctrl"];
-    private static readonly string[] _ctrlShift = ["Ctrl", "Shift"];
     private static readonly string[] _allFourModifiersInOrder = ["Ctrl", "Shift", "Alt", "Meta"];
 
     [Test]
-    public void A_modifier_and_key_produce_the_expected_parts()
+    public void A_modifier_and_key_produce_the_editors_names()
     {
-        var combo = HotkeyCombo.TryCreate(
-            Held(VirtualKeys.LControl),
-            0x70 /* F1 */
-        );
+        var combo = HotkeyCombo.Create(KeyModifier.Control, KeyCode.F1);
 
-        Assert.That(combo?.Modifiers, Is.EqualTo(_ctrl));
-        Assert.That(combo?.Key, Is.EqualTo("F1"));
-    }
-
-    [Test]
-    public void Modifiers_always_appear_in_the_same_order_regardless_of_press_order()
-    {
-        var shiftThenCtrl = HotkeyCombo.TryCreate(
-            Held(VirtualKeys.LShift, VirtualKeys.LControl),
-            0x41 /* A */
-        );
-        var ctrlThenShift = HotkeyCombo.TryCreate(
-            Held(VirtualKeys.LControl, VirtualKeys.LShift),
-            0x41 /* A */
-        );
-
-        Assert.That(shiftThenCtrl?.Modifiers, Is.EqualTo(_ctrlShift));
-        Assert.That(ctrlThenShift?.Modifiers, Is.EqualTo(shiftThenCtrl?.Modifiers));
+        Assert.That(combo.Modifiers, Is.EqualTo(_ctrl));
+        Assert.That(combo.Key, Is.EqualTo("F1"));
     }
 
     [Test]
     public void All_four_modifiers_keep_the_editors_record_order()
     {
-        var combo = HotkeyCombo.TryCreate(
-            Held(VirtualKeys.LWin, VirtualKeys.LMenu, VirtualKeys.LShift, VirtualKeys.LControl),
-            0x41
+        var combo = HotkeyCombo.Create(
+            KeyModifier.Meta | KeyModifier.Alt | KeyModifier.Shift | KeyModifier.Control,
+            KeyCode.A
         );
 
-        Assert.That(combo?.Modifiers, Is.EqualTo(_allFourModifiersInOrder));
+        Assert.That(combo.Modifiers, Is.EqualTo(_allFourModifiersInOrder));
     }
 
     [Test]
-    public void The_left_and_right_variant_of_a_modifier_produce_the_same_name()
+    public void A_right_hand_modifier_is_named_like_the_left_one()
     {
-        var left = HotkeyCombo.TryCreate(Held(VirtualKeys.LControl), 0x41);
-        var right = HotkeyCombo.TryCreate(Held(VirtualKeys.RControl), 0x41);
+        var right = HotkeyCombo.Create(KeyModifier.RightControl | KeyModifier.RightMeta, KeyCode.A);
+        var left = HotkeyCombo.Create(KeyModifier.Control | KeyModifier.Meta, KeyCode.A);
 
-        Assert.That(left?.Modifiers, Is.EqualTo(right?.Modifiers));
+        Assert.That(right.Text, Is.EqualTo("Ctrl+Meta+A"));
+        Assert.That(right.Text, Is.EqualTo(left.Text));
     }
 
     [Test]
     public void A_key_with_no_modifier_held_still_forms_a_combo()
     {
-        var combo = HotkeyCombo.TryCreate(
-            Held(),
-            0x41 /* A */
-        );
+        var combo = HotkeyCombo.Create(KeyModifier.None, KeyCode.A);
 
-        Assert.That(combo?.Modifiers, Is.Empty);
-        Assert.That(combo?.Key, Is.EqualTo("A"));
+        Assert.That(combo.Modifiers, Is.Empty);
+        Assert.That(combo.Text, Is.EqualTo("A"));
+    }
+
+    [TestCase(KeyCode.D3, "3")]
+    [TestCase(KeyCode.Minus, "Minus")]
+    [TestCase(KeyCode.IntlBackslash, "IntlBackslash")]
+    [TestCase(KeyCode.NumpadSubtract, "NumpadSubtract")]
+    [TestCase(KeyCode.NumpadEnter, "NumpadEnter")]
+    public void Keys_use_the_name_the_editor_stores(KeyCode key, string expected)
+    {
+        Assert.That(HotkeyCombo.Create(KeyModifier.None, key).Key, Is.EqualTo(expected));
     }
 
     [Test]
-    public void A_modifier_pressed_as_the_trailing_key_is_not_a_combo()
+    public void A_windows_punctuation_key_is_named_by_its_scan_code_position()
     {
-        var combo = HotkeyCombo.TryCreate(
-            Held(VirtualKeys.LControl, VirtualKeys.LShift),
-            VirtualKeys.LShift
-        );
+        // VK_OEM_4 with the scan code of the key right of 0, the German ß key.
+        var key = NativeKeys.FromWindows(0xDB, 0x0C, isExtended: false);
 
-        Assert.That(combo, Is.Null);
+        Assert.That(HotkeyCombo.Create(KeyModifier.Control, key).Text, Is.EqualTo("Ctrl+Minus"));
     }
-
-    [Test]
-    public void An_unmapped_trailing_key_is_not_a_combo()
-    {
-        var combo = HotkeyCombo.TryCreate(
-            Held(VirtualKeys.LControl),
-            0x07 /* unmapped */
-        );
-
-        Assert.That(combo, Is.Null);
-    }
-
-    [Test]
-    public void A_numpad_key_uses_its_own_token_distinct_from_the_identically_printed_main_row_key()
-    {
-        // Numpad and main-row minus print the same glyph but the editor names them differently.
-        Assert.That(
-            HotkeyCombo
-                .TryCreate(
-                    Held(VirtualKeys.LControl),
-                    0x6D /* numpad - */
-                )
-                ?.Key,
-            Is.EqualTo("NumpadSubtract")
-        );
-        Assert.That(
-            HotkeyCombo
-                .TryCreate(
-                    Held(VirtualKeys.LControl),
-                    0xBD /* main-row - */
-                )
-                ?.Key,
-            Is.EqualTo("-")
-        );
-        Assert.That(
-            HotkeyCombo
-                .TryCreate(
-                    Held(VirtualKeys.LControl),
-                    0x6B /* numpad + */
-                )
-                ?.Key,
-            Is.EqualTo("NumpadAdd")
-        );
-    }
-
-    private static HashSet<int> Held(params int[] vkCodes) => [.. vkCodes];
 }

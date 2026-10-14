@@ -8,9 +8,12 @@ on:
 
 jobs:
   build-and-test:
-    # The keyboard hook is a Win32 SetWindowsHookExW P/Invoke, so the plugin only builds and runs its
-    # tests on Windows.
-    runs-on: windows-latest
+    # The integration tests start the real keyboard hook, so every platform runs them.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4

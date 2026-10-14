@@ -74,7 +74,7 @@ jobs:
     with:
       version: ${{ needs.prepare.outputs.tag }}
       source: src/SystemHotkeys
-      cli-version: 3.0.0-beta.15
+      cli-version: 3.0.0-beta.17
       changelog: ${{ needs.prepare.outputs.changelog }}
       # Puts the tests on windows-latest: no Linux entrypoint is declared and the tests never ran on Linux
       build-per-platform: true

@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using MacroDeck.Sdk.Input;
 using Serilog;
+using SystemHotkeys.Hotkeys.Linux;
 using SystemHotkeys.Hotkeys.MacOS;
 using SystemHotkeys.Hotkeys.Windows;
 
@@ -36,6 +37,11 @@ internal abstract class KeyboardHook : IDisposable
 		if (OperatingSystem.IsMacOS())
 		{
 			return new MacKeyboardHook(logger);
+		}
+
+		if (OperatingSystem.IsLinux() && RuntimeInformation.ProcessArchitecture == Architecture.X64)
+		{
+			return new LinuxKeyboardHook(logger);
 		}
 
 		return new UnsupportedKeyboardHook(logger);
@@ -88,10 +94,13 @@ internal abstract class KeyboardHook : IDisposable
 			return false;
 		}
 
-		Logger.Information(
-			"Suppressing hotkey {Combo}: keeping it from reaching other applications.",
-			combo.Text
-		);
+		if (_access == KeyboardHookAccess.Full)
+		{
+			Logger.Information(
+				"Suppressing hotkey {Combo}: keeping it from reaching other applications.",
+				combo.Text
+			);
+		}
 
 		lock (_gate)
 		{

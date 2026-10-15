@@ -1,6 +1,6 @@
 # System Hotkeys
 
-A [Macro Deck 3](https://macro-deck.app/) plugin for Windows and macOS that installs a global keyboard hook and
+A [Macro Deck 3](https://macro-deck.app/) plugin for Windows, macOS and Linux that installs a global keyboard hook and
 publishes a `hotkey-pressed` event whenever a modifier+key combination is pressed anywhere on the
 machine - press Alt+F1 while the browser has focus, and Macro Deck still sees it. This is what Macro
 Deck 2's per-button hotkey assignment turns into in Macro Deck 3: bind any Automation or widget flow to
@@ -63,7 +63,8 @@ does not take: doing it without adding input lag to every ordinary use of that m
 key-up correction after the fact, which is real added complexity worth reaching for only once an actual
 bind needs it.
 
-On macOS this needs the Accessibility permission - see [macOS](#macos) below.
+On macOS this needs the Accessibility permission - see [macOS](#macos) below. On Linux the plugin
+never swallows a key itself; [Linux](#linux) shows how to let the desktop do it.
 
 This works for the overwhelming majority of applications, games included - but a `WH_KEYBOARD_LL` hook is
 not guaranteed to reach every input path (a title using exclusive DirectInput or kernel-level anti-cheat
@@ -123,6 +124,41 @@ Differences from Windows:
 - Caps Lock, Fn, `F21`-`F24` and the media keys can never be a combo's key.
 - Only Apple silicon Macs are supported.
 
+## Linux
+
+Wayland gives an app no way to watch keys pressed in other apps, so on Linux the plugin reads the
+keyboards directly from `/dev/input` (evdev). That works the same under Wayland and X11, but needs the
+user running Macro Deck to be in the `input` group:
+
+```bash
+sudo usermod -aG input $USER
+```
+
+then log out and back in. Without it nothing fires, and the plugin shows a notification saying so. The
+plugin looks for keyboards every few seconds, so a keyboard plugged in later is picked up without a
+restart.
+
+The plugin only ever reads on Linux, so the trigger does not offer
+[Also stop this key from reaching other apps](#keeping-a-hotkey-from-reaching-other-apps) there; the
+**Hotkey** field's description points here instead. Let the desktop swallow the key: bind the same combo to a command that does nothing in
+your desktop's own shortcut settings. The desktop then keeps the key from the focused app, and the
+plugin still sees it, because it reads the keyboard below the desktop. For example:
+
+- **GNOME:** Settings > Keyboard > Keyboard Shortcuts > Custom Shortcuts, command `true`
+- **KDE Plasma:** System Settings > Shortcuts > Add New > Command or Script, command `true`
+- **Sway:** `bindsym Ctrl+F3 exec true`
+- **Hyprland:** `bind = CTRL, F3, exec, true`
+
+A fullscreen game or virtual machine that asks the desktop to pass every shortcut through to it
+(Wayland's "inhibit shortcuts") still receives the key while it has focus.
+
+Differences from Windows:
+
+- Letters are recorded by their position on a US keyboard, not by what your layout prints there: on a
+  German keyboard the key labelled `Z` fires as `Y`. Record the combo rather than picking it by hand if
+  in doubt.
+- Only x86-64 (linux-x64) is supported.
+
 ## Privacy
 
 A global keyboard hook sees every key pressed on the machine, so here is exactly what this plugin does
@@ -131,6 +167,10 @@ forgotten. Nothing is recorded, written to disk or logged - the only hotkey-rela
 count of suppressed combos described above. The plugin opens no network connection of its own: the
 only thing it sends anywhere is the `hotkey-pressed` event itself, to your local Macro Deck instance,
 and only when a combo completes. It uses no AI.
+
+On Linux, membership in the `input` group (see [Linux](#linux)) lets every program you run read the
+keyboard, not only Macro Deck. That is how evdev access works and not something the plugin can narrow
+down.
 
 ## Installing
 
@@ -142,8 +182,7 @@ published) and install it from Macro Deck's plugin manager.
 
 - .NET SDK 10.0
 - A running Macro Deck desktop app for [interactive debugging](#run-and-debug-against-macro-deck)
-- Windows (win-x64) or macOS on Apple silicon (osx-arm64). Linux is not supported yet: Wayland gives an
-  app no way to watch global keys, so it needs a separate evdev backend.
+- Windows (win-x64), macOS on Apple silicon (osx-arm64) or Linux on x86-64 (linux-x64)
 
 ## Quick start
 
@@ -172,7 +211,7 @@ Windows it needs GNU make and Git Bash's `sh` on `PATH`.
 ```
 src/SystemHotkeys/
   Program.cs             the host builder - a few lines and a RunAsync
-  manifest.json           identity, icon and the win-x64 and osx-arm64 entrypoints
+  manifest.json           identity, icon and the win-x64, osx-arm64 and linux-x64 entrypoints
   macrodeck-build.json    how `macrodeck-plugin build` publishes it
   PluginIntegration.cs    the integration: the hotkey-pressed event, its combo and suppress-toggle
                           parameters, and reading them back through IEventPublisher.GetBindings
@@ -182,6 +221,7 @@ src/SystemHotkeys/
                             suppressed combo swallows, picks the backend for this OS
     Windows/                the WH_KEYBOARD_LL hook and its message loop
     MacOS/                  the Quartz event tap and its run loop
+    Linux/                  the evdev keyboards and the poll loop that reads them
     HotkeyCombo.cs          held keys into the { modifiers, key } shape the combo editor stores
     BoundHotkeyCombos.cs    turns GetBindings() into the set of combos currently opted into suppression
   Localization/Strings.resx   the default-culture strings, one file per language
@@ -334,7 +374,7 @@ real Kestrel server.
 
 | Command | What it does |
 | --- | --- |
-| `build` | Publishes every runtime identifier in `macrodeck-build.json` (win-x64, osx-arm64), then packs the result. |
+| `build` | Publishes every runtime identifier in `macrodeck-build.json` (win-x64, osx-arm64, linux-x64), then packs the result. |
 | `validate` | Checks a manifest, version directory or artifact against the real manifest reader, the JSON Schema, the permission vocabulary and declared file digests. |
 | `inspect` | Reports what installing an artifact would find - entrypoints, permissions, dependencies, conflicts, compatibility, signature shape, size. |
 | `pack` | Builds a `.macroDeckPlugin` artifact, validating the manifest first and recomputing `files[]` digests. |

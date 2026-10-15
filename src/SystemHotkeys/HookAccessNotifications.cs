@@ -6,8 +6,10 @@ namespace SystemHotkeys;
 
 internal sealed class HookAccessNotifications
 {
-	private const string InputMonitoringKey = "input-monitoring-required";
+	private const string KeyboardAccessKey = "keyboard-access-required";
 	private const string AccessibilityKey = "accessibility-required";
+
+	private static readonly bool _isLinux = OperatingSystem.IsLinux();
 
 	// UserNotificationRequest takes plain strings.
 	private static readonly LocalizationResolver _resolver = CreateResolver();
@@ -21,15 +23,18 @@ internal sealed class HookAccessNotifications
 		{
 			Toggle(
 				notifier,
-				InputMonitoringKey,
+				KeyboardAccessKey,
 				access == KeyboardHookAccess.Denied,
-				Strings.Notifications.InputMonitoringRequired.Title(),
-				Strings.Notifications.InputMonitoringRequired.Message()
+				Strings.Notifications.KeyboardAccessRequired.Title(),
+				_isLinux
+					? Strings.Notifications.KeyboardAccessRequired.Message.Linux()
+					: Strings.Notifications.KeyboardAccessRequired.Message.MacOs()
 			);
 			Toggle(
 				notifier,
 				AccessibilityKey,
-				access == KeyboardHookAccess.ObserveOnly && suppressionRequested,
+				// Linux never swallows; the suppress toggle's description says what to do instead.
+				!_isLinux && access == KeyboardHookAccess.ObserveOnly && suppressionRequested,
 				Strings.Notifications.AccessibilityRequired.Title(),
 				Strings.Notifications.AccessibilityRequired.Message()
 			);

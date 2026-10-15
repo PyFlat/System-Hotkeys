@@ -4,8 +4,8 @@ This file must be kept up to date. When a rule here stops matching reality, or a
 work in this repository, update this file as part of that change rather than leaving it to drift.
 
 This folder is **System Hotkeys** (`manifest.json` `name`), a Macro Deck 3 out-of-process plugin
-(Windows and macOS) that installs a global keyboard hook (`WH_KEYBOARD_LL` on Windows, a Quartz event tap
-on macOS) and publishes a `hotkey-pressed`
+(Windows, macOS and Linux) that installs a global keyboard hook (`WH_KEYBOARD_LL` on Windows, a Quartz
+event tap on macOS, evdev on Linux) and publishes a `hotkey-pressed`
 event whenever a modifier+key combination is pressed anywhere on the machine, so any Automation or
 widget flow can bind to a system-wide hotkey. The hook is passive by default; a trigger can opt in to
 also swallowing its combo's trailing key, and can scope itself to one device, profile and/or folder.
@@ -20,7 +20,7 @@ package itself is covered by
 ```
 src/SystemHotkeys/
   Program.cs               builder chain - a few lines and a RunAsync
-  manifest.json             identity, icon, win-x64 and osx-arm64 entrypoints
+  manifest.json             identity, icon, win-x64, osx-arm64 and linux-x64 entrypoints
   macrodeck-build.json      one publish target per entrypoint (framework-dependent)
   PluginIntegration.cs      IPluginIntegration + IEventProvider + IDynamicEventOptionsProvider: the
                              hotkey-pressed event, its combo/suppress/scope parameters, and reading
@@ -31,6 +31,8 @@ src/SystemHotkeys/
                                suppressed combo swallows, the access level, and the per-OS factory
     Windows/                  WindowsKeyboardHook (WH_KEYBOARD_LL plus its message loop) and its P/Invoke
     MacOS/                    MacKeyboardHook (Quartz event tap on a CFRunLoop thread) and its P/Invoke
+    Linux/                    LinuxKeyboardHook (poll loop over evdev keyboards), EvdevKeyboard and its
+                               libc P/Invoke
     HotkeyCombo.cs            held keys into the { modifiers, key } shape the combo editor stores
     BoundHotkeyCombos.cs      turns GetBindings() into the set of combos currently opted into
                                suppression
@@ -71,7 +73,8 @@ Design knowledge that is not obvious from the code alone:
   stop resolving without notice on a future host; check the picker still offers real device names after
   any host update.
 - **Key names come from the SDK, never from a table of our own.** A backend translates its native code with
-  `MacroDeck.Sdk.Input.NativeKeys` (`FromWindows(vk, scanCode, isExtended)`, `FromMacOs`) and hands
+  `MacroDeck.Sdk.Input.NativeKeys` (`FromWindows(vk, scanCode, isExtended)`, `FromMacOs`, `FromLinux`
+  with the evdev code) and hands
   `KeyboardHook` a `KeyCode`; `KeyNames.ToName` and `ToModifierNames` produce exactly what the combo editor
   stores (Macro Deck ADR 0104: letters by layout label, digits and punctuation by position, `Minus`,
   `IntlBackslash`, `NumpadEnter`). A key the SDK returns `KeyCode.None` for is ignored.
@@ -112,14 +115,26 @@ Design knowledge that is not obvious from the code alone:
 - **`NativeKeys.FromMacOs` reads the active input source from the event tap thread.** Apple documents the
   Text Input Sources API for the main thread and the SDK only tested it from a thread-pool thread, so check
   letters on a non-US layout (German `Z`/`Y`) after any change to the tap or an SDK update.
-- **Linux is not declared yet.** Wayland offers no global key observation, so a Linux backend would read
-  evdev (`/dev/input`, user in the `input` group). Swallowing a key there means grabbing the whole
-  keyboard and re-emitting every other key through uinput, or the XDG GlobalShortcuts portal.
+- **Linux reads evdev, because Wayland offers no global key observation.** `LinuxKeyboardHook` opens every
+  `/dev/input/event*` with a key below `BTN_MISC`, rescans every 2 seconds for hotplug, and polls them on
+  one thread. Access is `Denied` with no readable keyboard (user not in `input`) and `ObserveOnly`
+  otherwise. Letters are positional: evdev has no layout, and `FromLinux` maps by US position. The
+  struct layouts and open flags in `Linux/NativeMethods.cs` are x86-64 values, which is why
+  `KeyboardHook.Create` only picks the backend on X64.
+- **Linux never swallows a key, by design.** Evdev can only drop a key by grabbing the whole keyboard
+  (`EVIOCGRAB`) and re-emitting every other key through uinput, which puts the plugin in the path of
+  every keystroke and freezes that keyboard if the process hangs. The user binds the combo to a no-op
+  in the desktop's own shortcuts instead: the desktop swallows it, and evdev, read below the desktop,
+  still delivers it. So on Linux `PluginIntegration` leaves the suppress toggle out of the event
+  definition (the combo's Linux description explains the desktop route instead), and
+  `HookAccessNotifications` shows no Accessibility-style notification there. The XDG GlobalShortcuts portal was rejected too: the
+  desktop, not the trigger, picks the combo, and wlroots compositors do not implement it.
 - **Framework-dependent on every platform.** Each entrypoint names `runtimes/<rid>/SystemHotkeys.dll`
   with `"runtime": { "kind": "FrameworkDependent", "dotnetVersion":
   "10.0" }`, and `macrodeck-build.json` publishes with `--self-contained false -p:UseAppHost=false` to
   match - Macro Deck ships the .NET 10 runtime with the host, so the artifact carries only this plugin's
-  own assemblies. The DLL is plain IL, so one machine builds every platform. Keep the manifest and
+  own assemblies. The DLL is plain IL, so one machine builds every platform, which is why
+  `release.yml` leaves `build-per-platform` off. Keep the manifest and
   `macrodeck-build.json` on the same pairing, with one target per entrypoint; mixing them fails
   validation.
 
@@ -427,7 +442,7 @@ macrodeck-plugin build --source src/SystemHotkeys --output ./artifacts
 macrodeck-plugin inspect --artifact ./artifacts/<id>-<version>.macroDeckPlugin
 ```
 
-`build` reads `macrodeck-build.json`, publishes each runtime identifier (win-x64, osx-arm64) into its
+`build` reads `macrodeck-build.json`, publishes each runtime identifier (win-x64, osx-arm64, linux-x64) into its
 `runtimes/<rid>/` slot and packs the result.
 
 A `dotnet build -c Release` output is *not* packable: the manifest points at `runtimes/<rid>/`, which

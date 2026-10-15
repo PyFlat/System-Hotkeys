@@ -11,8 +11,9 @@ namespace SystemHotkeys.Tests;
 [TestFixture]
 public sealed class PluginIntegrationTests
 {
-    private static readonly string[] _configurationParameters =
-        ["combo", "suppress", "deviceId", "profileId", "folderId"];
+    private static readonly string[] _configurationParameters = OperatingSystem.IsLinux()
+        ? ["combo", "deviceId", "profileId", "folderId"]
+        : ["combo", "suppress", "deviceId", "profileId", "folderId"];
     private static readonly string[] _payloadParameters = ["combo", "deviceId", "profileId", "folderId"];
     private static readonly string[] _ctrlShift = ["Ctrl", "Shift"];
 
@@ -32,7 +33,7 @@ public sealed class PluginIntegrationTests
     }
 
     [Test]
-    public async Task The_event_declares_combo_suppress_client_profile_and_folder_configuration_and_matching_payload_parameters()
+    public async Task The_event_declares_its_configuration_and_matching_payload_parameters()
     {
         await using var harness = CreateHarness();
         await harness.InitializeIntegrationsAsync();
@@ -48,9 +49,6 @@ public sealed class PluginIntegrationTests
             hotkeyPressed.ConfigurationParameters.Single(p => p.Name == "combo").Type,
             Is.EqualTo("KeyboardCombo")
         );
-        var suppress = hotkeyPressed.ConfigurationParameters.Single(p => p.Name == "suppress");
-        Assert.That(suppress.Type, Is.EqualTo("Boolean"));
-        Assert.That(suppress.LiteralOnly, Is.True);
         foreach (var scopeParameter in new[] { "deviceId", "profileId", "folderId" })
         {
             var scope = hotkeyPressed.ConfigurationParameters.Single(p => p.Name == scopeParameter);
@@ -66,6 +64,27 @@ public sealed class PluginIntegrationTests
             Is.EqualTo("KeyboardCombo")
         );
         Assert.That(catalog.HasDynamicEventOptions, Is.True);
+    }
+
+    [Test]
+    public async Task The_suppress_toggle_is_a_literal_boolean_and_is_left_out_on_linux()
+    {
+        await using var harness = CreateHarness();
+        await harness.InitializeIntegrationsAsync();
+
+        var catalog = (await harness.Events.DescribeAsync()).DataAs<EventCatalogPayload>();
+        var hotkeyPressed = catalog!.Events.Single(e => e.LocalId == "hotkey-pressed");
+        var suppress = hotkeyPressed.ConfigurationParameters.SingleOrDefault(p => p.Name == "suppress");
+
+        if (OperatingSystem.IsLinux())
+        {
+            Assert.That(suppress, Is.Null);
+            return;
+        }
+
+        Assert.That(suppress, Is.Not.Null);
+        Assert.That(suppress!.Type, Is.EqualTo("Boolean"));
+        Assert.That(suppress.LiteralOnly, Is.True);
     }
 
     [Test]

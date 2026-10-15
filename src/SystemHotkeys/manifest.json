@@ -20,6 +20,13 @@
         "kind": "FrameworkDependent",
         "dotnetVersion": "10.0"
       }
+    },
+    "linux-x64": {
+      "executable": "runtimes/linux-x64/SystemHotkeys.dll",
+      "runtime": {
+        "kind": "FrameworkDependent",
+        "dotnetVersion": "10.0"
+      }
     }
   },
   "publisher": {

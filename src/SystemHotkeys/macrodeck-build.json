@@ -34,6 +34,23 @@
         "bin/publish/osx-arm64"
       ],
       "output": "bin/publish/osx-arm64"
+    },
+    "linux-x64": {
+      "executable": "dotnet",
+      "arguments": [
+        "publish",
+        "SystemHotkeys.csproj",
+        "-c",
+        "Release",
+        "-r",
+        "linux-x64",
+        "--self-contained",
+        "false",
+        "-p:UseAppHost=false",
+        "-o",
+        "bin/publish/linux-x64"
+      ],
+      "output": "bin/publish/linux-x64"
     }
   }
 }

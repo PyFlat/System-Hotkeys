@@ -82,15 +82,23 @@ public sealed class PluginIntegration
                     ActionParameter.KeyboardCombo(
                         ComboParameterName,
                         label: Strings.Events.HotkeyPressed.Combo.Label(),
-                        description: Strings.Events.HotkeyPressed.Combo.Description(),
+                        description: OperatingSystem.IsLinux()
+                            ? Strings.Events.HotkeyPressed.Combo.LinuxDescription()
+                            : Strings.Events.HotkeyPressed.Combo.Description(),
                         required: true
                     ),
-                    ActionParameter.Toggle(
-                        SuppressParameterName,
-                        label: Strings.Events.HotkeyPressed.Suppress.Label(),
-                        description: Strings.Events.HotkeyPressed.Suppress.Description(),
-                        literalOnly: true
-                    ),
+                    // The Linux hook never swallows a key.
+                    .. OperatingSystem.IsLinux()
+                        ? (IReadOnlyList<ActionParameter>)[]
+                        :
+                        [
+                            ActionParameter.Toggle(
+                                SuppressParameterName,
+                                label: Strings.Events.HotkeyPressed.Suppress.Label(),
+                                description: Strings.Events.HotkeyPressed.Suppress.Description(),
+                                literalOnly: true
+                            ),
+                        ],
                     ActionParameter.DynamicChoice(
                         DeviceParameterName,
                         label: Strings.Events.HotkeyPressed.Device.Label(),

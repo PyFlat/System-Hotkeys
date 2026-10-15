@@ -105,11 +105,11 @@ anywhere, always publishes exactly once, no matter how many clients are connecte
 macOS only lets an app see keys pressed in other apps once you allow it. The plugin runs inside Macro
 Deck, so the permission goes to **Macro Deck**, under **System Settings > Privacy & Security**:
 
-- **Input Monitoring** is enough for hotkeys to fire. Without it nothing fires; the plugin shows a
-  notification saying so, and asks macOS to list Macro Deck there.
+- **Input Monitoring** is enough for hotkeys to fire. Without it nothing fires; the integration shows
+  a problem saying so in Macro Deck's Integrations page, and asks macOS to list Macro Deck there.
 - **Accessibility** is needed as well for [Also stop this key from reaching other apps](#keeping-a-hotkey-from-reaching-other-apps).
-  Without it hotkeys still fire, but the focused app sees the key too. The plugin shows a notification
-  only once a trigger actually asks for suppression.
+  Without it hotkeys still fire, but the focused app sees the key too. The integration shows a warning
+  about it only once a trigger actually asks for suppression.
 
 The plugin checks again every few seconds, so a newly granted permission takes effect without a
 restart, and taking Accessibility away drops it back to watching only. If
@@ -134,7 +134,8 @@ user running Macro Deck to be in the `input` group:
 sudo usermod -aG input $USER
 ```
 
-then log out and back in. Without it nothing fires, and the plugin shows a notification saying so. The
+then log out and back in. Without it nothing fires, and the integration shows a problem saying so in
+Macro Deck's Integrations page; **Check again** there confirms the fix. The
 plugin looks for keyboards every few seconds, so a keyboard plugged in later is picked up without a
 restart.
 
@@ -214,8 +215,8 @@ src/SystemHotkeys/
   manifest.json           identity, icon and the win-x64, osx-arm64 and linux-x64 entrypoints
   macrodeck-build.json    how `macrodeck-plugin build` publishes it
   PluginIntegration.cs    the integration: the hotkey-pressed event, its combo and suppress-toggle
-                          parameters, and reading them back through IEventPublisher.GetBindings
-  HookAccessNotifications.cs   tells the user which OS permission the hook is missing
+                          parameters, reading them back through IEventPublisher.GetBindings, and the
+                          integration issues for a missing OS permission
   Hotkeys/                the keyboard hook itself
     KeyboardHook.cs         the platform-neutral half: detects a completed combo, decides what a
                             suppressed combo swallows, picks the backend for this OS

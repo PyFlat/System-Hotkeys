@@ -1,7 +1,10 @@
+using MacroDeck.Plugin.Hosting.Integrations.HostApis;
+using MacroDeck.Plugin.Protocol.Handshake;
 using MacroDeck.Sdk;
 using MacroDeck.Sdk.Actions;
 using MacroDeck.Sdk.Decks;
 using MacroDeck.Sdk.Events;
+using MacroDeck.Sdk.Issues;
 using Serilog;
 using SystemHotkeys.Hotkeys;
 
@@ -11,6 +14,7 @@ public sealed class PluginIntegration
     : IPluginIntegration,
         IEventProvider,
         IDynamicEventOptionsProvider,
+        IIntegrationIssueProvider,
         IDisposable
 {
     internal const string DevicesOptionsSourceId = "macrodeck.devices";
@@ -22,16 +26,21 @@ public sealed class PluginIntegration
     internal const string ProfileParameterName = "profileId";
     internal const string FolderParameterName = "folderId";
 
+    internal const string KeyboardAccessIssueId = "keyboard-access-required";
+    internal const string AccessibilityIssueId = "accessibility-required";
+
     private readonly ILogger _logger;
     private readonly KeyboardHook _hook;
-    private readonly HookAccessNotifications _accessNotifications = new();
 
     private IIntegrationContext? _context;
     private volatile bool _anyBindingIsScoped;
     private volatile bool _suppressionRequested;
 
-    public PluginIntegration(ILogger logger)
+    private readonly IPluginCatalogNotifier _catalog;
+
+    public PluginIntegration(IPluginCatalogNotifier catalog, ILogger logger)
     {
+        _catalog = catalog;
         _logger = logger.ForContext<PluginIntegration>();
         _hook = KeyboardHook.Create(logger);
         _hook.HotkeyPressed += OnHotkeyPressed;
@@ -63,7 +72,6 @@ public sealed class PluginIntegration
         }
 
         _hook.Dispose();
-        _accessNotifications.Reset();
         _context = null;
         return Task.CompletedTask;
     }
@@ -171,19 +179,16 @@ public sealed class PluginIntegration
             _logger
         );
         _hook.SetSuppressed(bound);
-        _suppressionRequested = bound.Count > 0;
-        UpdateAccessNotifications();
-    }
-
-    private void OnHookAccessChanged(KeyboardHookAccess access) => UpdateAccessNotifications();
-
-    private void UpdateAccessNotifications()
-    {
-        if (_context is { } context)
+        var suppressionRequested = bound.Count > 0;
+        if (suppressionRequested != _suppressionRequested)
         {
-            _accessNotifications.Update(context.Notifications, _hook.Access, _suppressionRequested);
+            _suppressionRequested = suppressionRequested;
+            _catalog.CatalogChanged(CapabilityKinds.Issues, reason: "suppression requested or dropped");
         }
     }
+
+    private void OnHookAccessChanged(KeyboardHookAccess access) =>
+        _catalog.CatalogChanged(CapabilityKinds.Issues, reason: $"keyboard access is now {access}");
 
     // Moving folders never raises BindingsChanged, so watch it separately
     private void OnDeckClientChanged(object? sender, DeckClientChangedEventArgs e) =>
@@ -212,6 +217,57 @@ public sealed class PluginIntegration
             context.Events.Publish(HotkeyPressedEventId, payload);
         }
     }
+
+    public Task<IReadOnlyList<IntegrationIssue>> GetIssuesAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        IReadOnlyList<IntegrationIssue> issues = _hook.Access switch
+        {
+            KeyboardHookAccess.Denied =>
+            [
+                new IntegrationIssue
+                {
+                    Id = KeyboardAccessIssueId,
+                    Title = Strings.Issues.KeyboardAccessRequired.Title(),
+                    Description = OperatingSystem.IsLinux()
+                        ? Strings.Issues.KeyboardAccessRequired.Description.Linux()
+                        : Strings.Issues.KeyboardAccessRequired.Description.MacOs(),
+                    ActionLabel = Strings.Issues.KeyboardAccessRequired.Action(),
+                    Severity = IntegrationIssueSeverity.Error,
+                },
+            ],
+            // Linux never swallows, so ObserveOnly there is not a missing permission.
+            KeyboardHookAccess.ObserveOnly when _suppressionRequested && OperatingSystem.IsMacOS() =>
+            [
+                new IntegrationIssue
+                {
+                    Id = AccessibilityIssueId,
+                    Title = Strings.Issues.AccessibilityRequired.Title(),
+                    Description = Strings.Issues.AccessibilityRequired.Description(),
+                    Severity = IntegrationIssueSeverity.Warning,
+                },
+            ],
+            _ => [],
+        };
+
+        return Task.FromResult(issues);
+    }
+
+    public Task<IssueResolution> ResolveIssueAsync(
+        string issueId,
+        CancellationToken cancellationToken = default
+    ) =>
+        Task.FromResult(
+            issueId switch
+            {
+                KeyboardAccessIssueId when _hook.Access != KeyboardHookAccess.Denied => IssueResolution.Ok(),
+                KeyboardAccessIssueId => IssueResolution.Failed(
+                    Strings.Issues.KeyboardAccessRequired.StillDenied()
+                ),
+                _ => IssueResolution.Failed(Strings.Issues.Unknown()),
+            }
+        );
 
     // Device resolves through the "macrodeck.devices" options source, not here.
     public Task<DynamicOptionsResult> GetEventOptionsAsync(

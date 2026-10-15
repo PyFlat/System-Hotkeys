@@ -1,6 +1,7 @@
 using System.Text.Json;
 using MacroDeck.Plugin.Protocol.Capabilities.Actions;
 using MacroDeck.Plugin.Protocol.Capabilities.Events;
+using MacroDeck.Plugin.Protocol.Capabilities.Issues;
 using MacroDeck.Plugin.Testing;
 using MacroDeck.Sdk.Decks;
 using MacroDeck.Sdk.Events;
@@ -16,6 +17,7 @@ public sealed class PluginIntegrationTests
         : ["combo", "suppress", "deviceId", "profileId", "folderId"];
     private static readonly string[] _payloadParameters = ["combo", "deviceId", "profileId", "folderId"];
     private static readonly string[] _ctrlShift = ["Ctrl", "Shift"];
+    private static readonly string[] _knownIssueIds = ["keyboard-access-required", "accessibility-required"];
 
     private static PluginTestHarness CreateHarness() =>
         PluginTestHarness.Create(builder =>
@@ -155,6 +157,21 @@ public sealed class PluginIntegrationTests
         var describe = (await harness.Actions.DescribeAsync()).DataAs<ActionCatalogPayload>();
 
         Assert.That(describe!.Actions, Is.Empty);
+    }
+
+    [Test]
+    public async Task Issues_only_ever_name_a_missing_keyboard_permission()
+    {
+        await using var harness = CreateHarness();
+        await harness.InitializeIntegrationsAsync();
+
+        var outcome = await harness.Issues.GetIssuesAsync();
+
+        Assert.That(outcome.Succeeded, Is.True);
+        Assert.That(
+            outcome.DataAs<IssueListResult>()!.Issues.Select(issue => issue.Id),
+            Is.SubsetOf(_knownIssueIds)
+        );
     }
 
     [Test]

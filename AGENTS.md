@@ -22,10 +22,10 @@ src/SystemHotkeys/
   Program.cs               builder chain - a few lines and a RunAsync
   manifest.json             identity, icon, win-x64, osx-arm64 and linux-x64 entrypoints
   macrodeck-build.json      one publish target per entrypoint (framework-dependent)
-  PluginIntegration.cs      IPluginIntegration + IEventProvider + IDynamicEventOptionsProvider: the
-                             hotkey-pressed event, its combo/suppress/scope parameters, and reading
-                             bound triggers back through IEventPublisher.GetBindings
-  HookAccessNotifications.cs  shows or clears a notification for each OS permission the hook lacks
+  PluginIntegration.cs      IPluginIntegration + IEventProvider + IDynamicEventOptionsProvider +
+                             IIntegrationIssueProvider: the hotkey-pressed event, its combo/suppress/scope
+                             parameters, reading bound triggers back through IEventPublisher.GetBindings,
+                             and an integration issue for each OS permission the hook lacks
   Hotkeys/                  the keyboard hook itself
     KeyboardHook.cs           the platform-neutral half: held keys, combo detection, which key events a
                                suppressed combo swallows, the access level, and the per-OS factory
@@ -103,10 +103,11 @@ Design knowledge that is not obvious from the code alone:
   false in a running process after a grant.
 - **TCC attributes macOS permissions to the responsible process.** That is Macro Deck for an installed
   plugin, not the plugin's `dotnet`, but the terminal app (VS Code, Terminal) for one started with
-  `make run`/`make watch`, so test a permission change by toggling that app. `PluginIntegration` turns the access level into a
-  notification: `Denied` always, `ObserveOnly` only while some binding asks for suppression.
-  `UserNotificationRequest` takes plain strings, so `HookAccessNotifications` resolves the `Strings` keys
-  itself through its own `LocalizationResolver`.
+  `make run`/`make watch`, so test a permission change by toggling that app. `PluginIntegration` turns the access level into an
+  integration issue: `Denied` always (an Error with a "Check again" action), `ObserveOnly` only on macOS
+  while some binding asks for suppression (a Warning). The host caches the issue list, so a change to the
+  access level or to whether suppression is requested must call `CatalogChanged(CapabilityKinds.Issues)`.
+  The host only lets the user resolve an issue the plugin currently reports.
 - **macOS modifiers come from the event flags, not from key presses.** Every key event resyncs the held
   modifiers from the device-dependent `CGEventFlags` bits (the only part that tells left from right), so a
   modifier released while the tap was blind (Secure Event Input) cannot stick. A non-repeat key-down of a
@@ -126,8 +127,8 @@ Design knowledge that is not obvious from the code alone:
   every keystroke and freezes that keyboard if the process hangs. The user binds the combo to a no-op
   in the desktop's own shortcuts instead: the desktop swallows it, and evdev, read below the desktop,
   still delivers it. So on Linux `PluginIntegration` leaves the suppress toggle out of the event
-  definition (the combo's Linux description explains the desktop route instead), and
-  `HookAccessNotifications` shows no Accessibility-style notification there. The XDG GlobalShortcuts portal was rejected too: the
+  definition (the combo's Linux description explains the desktop route instead), and no
+  Accessibility-style issue is reported there. The XDG GlobalShortcuts portal was rejected too: the
   desktop, not the trigger, picks the combo, and wlroots compositors do not implement it.
 - **Framework-dependent on every platform.** Each entrypoint names `runtimes/<rid>/SystemHotkeys.dll`
   with `"runtime": { "kind": "FrameworkDependent", "dotnetVersion":

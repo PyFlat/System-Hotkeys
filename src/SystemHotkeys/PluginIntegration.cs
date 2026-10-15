@@ -1,5 +1,3 @@
-using MacroDeck.Plugin.Hosting.Integrations.HostApis;
-using MacroDeck.Plugin.Protocol.Handshake;
 using MacroDeck.Sdk;
 using MacroDeck.Sdk.Actions;
 using MacroDeck.Sdk.Decks;
@@ -37,15 +35,11 @@ public sealed class PluginIntegration
     private volatile bool _anyBindingIsScoped;
     private volatile bool _suppressionRequested;
 
-    private readonly IPluginCatalogNotifier _catalog;
-
-    public PluginIntegration(IPluginCatalogNotifier catalog, ILogger logger)
+    public PluginIntegration(ILogger logger)
     {
-        _catalog = catalog;
         _logger = logger.ForContext<PluginIntegration>();
         _hook = KeyboardHook.Create(logger);
         _hook.HotkeyPressed += OnHotkeyPressed;
-        _hook.AccessChanged += OnHookAccessChanged;
     }
 
     public IReadOnlyList<IActionDefinition> Actions { get; } = [];
@@ -181,16 +175,8 @@ public sealed class PluginIntegration
         );
         _hook.SetRequestedSuppression(requested);
 
-        var suppressionRequested = requested.Count > 0;
-        if (suppressionRequested != _suppressionRequested)
-        {
-            _suppressionRequested = suppressionRequested;
-            _catalog.CatalogChanged(CapabilityKinds.Issues, reason: "suppression requested or dropped");
-        }
+        _suppressionRequested = requested.Count > 0;
     }
-
-    private void OnHookAccessChanged(KeyboardHookAccess access) =>
-        _catalog.CatalogChanged(CapabilityKinds.Issues, reason: $"keyboard access is now {access}");
 
     // Moving folders never raises BindingsChanged, so watch it separately
     private void OnDeckClientChanged(object? sender, DeckClientChangedEventArgs e) =>

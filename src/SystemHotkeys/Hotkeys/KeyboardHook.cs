@@ -21,8 +21,6 @@ internal abstract class KeyboardHook : IDisposable
 
 	internal event Action<HotkeyCombo>? HotkeyPressed;
 
-	internal event Action<KeyboardHookAccess>? AccessChanged;
-
 	internal KeyboardHookAccess Access => _access;
 
 	protected ILogger Logger { get; }
@@ -58,16 +56,7 @@ internal abstract class KeyboardHook : IDisposable
 
 	public abstract void Dispose();
 
-	protected void ReportAccess(KeyboardHookAccess access)
-	{
-		if (_access == access)
-		{
-			return;
-		}
-
-		_access = access;
-		AccessChanged?.Invoke(access);
-	}
+	protected void ReportAccess(KeyboardHookAccess access) => _access = access;
 
 	protected void Publish(HotkeyCombo combo)
 	{

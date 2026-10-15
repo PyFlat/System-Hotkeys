@@ -108,8 +108,9 @@ Design knowledge that is not obvious from the code alone:
   `make run`/`make watch`, so test a permission change by toggling that app. `PluginIntegration` turns the access level into an
   integration issue: `Denied` always (an Error with a "Check again" action), `ObserveOnly` while some
   binding asks for suppression (a Warning: Accessibility on macOS, `shortcuts-not-taken` with an "Open
-  shortcut settings" action on Linux). The host caches the issue list, so a change to the
-  access level or to whether suppression is requested must call `CatalogChanged(CapabilityKinds.Issues)`.
+  shortcut settings" action on Linux). The host lists issues live and polls them every 15
+  seconds, so the plugin never calls `CatalogChanged(CapabilityKinds.Issues)`: a `CatalogChanged` that
+  arrives while the host is still registering the plugin can swap in a stale snapshot without its events.
   The host only lets the user resolve an issue the plugin currently reports.
 - **macOS modifiers come from the event flags, not from key presses.** Every key event resyncs the held
   modifiers from the device-dependent `CGEventFlags` bits (the only part that tells left from right), so a

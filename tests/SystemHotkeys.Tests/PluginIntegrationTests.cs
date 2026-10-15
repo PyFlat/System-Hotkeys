@@ -12,12 +12,12 @@ namespace SystemHotkeys.Tests;
 [TestFixture]
 public sealed class PluginIntegrationTests
 {
-    private static readonly string[] _configurationParameters = OperatingSystem.IsLinux()
-        ? ["combo", "deviceId", "profileId", "folderId"]
-        : ["combo", "suppress", "deviceId", "profileId", "folderId"];
+    private static readonly string[] _configurationParameters =
+        ["combo", "suppress", "deviceId", "profileId", "folderId"];
     private static readonly string[] _payloadParameters = ["combo", "deviceId", "profileId", "folderId"];
     private static readonly string[] _ctrlShift = ["Ctrl", "Shift"];
-    private static readonly string[] _knownIssueIds = ["keyboard-access-required", "accessibility-required"];
+    private static readonly string[] _knownIssueIds =
+        ["keyboard-access-required", "accessibility-required", "shortcuts-not-taken"];
 
     private static PluginTestHarness CreateHarness() =>
         PluginTestHarness.Create(builder =>
@@ -69,23 +69,16 @@ public sealed class PluginIntegrationTests
     }
 
     [Test]
-    public async Task The_suppress_toggle_is_a_literal_boolean_and_is_left_out_on_linux()
+    public async Task The_suppress_toggle_is_a_literal_boolean()
     {
         await using var harness = CreateHarness();
         await harness.InitializeIntegrationsAsync();
 
         var catalog = (await harness.Events.DescribeAsync()).DataAs<EventCatalogPayload>();
         var hotkeyPressed = catalog!.Events.Single(e => e.LocalId == "hotkey-pressed");
-        var suppress = hotkeyPressed.ConfigurationParameters.SingleOrDefault(p => p.Name == "suppress");
+        var suppress = hotkeyPressed.ConfigurationParameters.Single(p => p.Name == "suppress");
 
-        if (OperatingSystem.IsLinux())
-        {
-            Assert.That(suppress, Is.Null);
-            return;
-        }
-
-        Assert.That(suppress, Is.Not.Null);
-        Assert.That(suppress!.Type, Is.EqualTo("Boolean"));
+        Assert.That(suppress.Type, Is.EqualTo("Boolean"));
         Assert.That(suppress.LiteralOnly, Is.True);
     }
 
@@ -160,7 +153,7 @@ public sealed class PluginIntegrationTests
     }
 
     [Test]
-    public async Task Issues_only_ever_name_a_missing_keyboard_permission()
+    public async Task Issues_only_ever_name_a_missing_keyboard_permission_or_suppression()
     {
         await using var harness = CreateHarness();
         await harness.InitializeIntegrationsAsync();

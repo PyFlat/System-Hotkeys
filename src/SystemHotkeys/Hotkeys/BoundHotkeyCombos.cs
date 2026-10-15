@@ -8,13 +8,23 @@ namespace SystemHotkeys.Hotkeys;
 
 public sealed class BoundHotkeyCombos
 {
-    public static readonly BoundHotkeyCombos None = new([]);
+    public static readonly BoundHotkeyCombos None = new([], []);
 
     private readonly HashSet<(string Key, string Modifiers)> _combos;
 
-    private BoundHotkeyCombos(HashSet<(string, string)> combos) => _combos = combos;
+    private BoundHotkeyCombos(
+        HashSet<(string Key, string Modifiers)> combos,
+        IReadOnlyList<(KeyModifier Modifiers, KeyCode Key)> parsed
+    )
+    {
+        _combos = combos;
+        Parsed = parsed;
+    }
 
     public int Count => _combos.Count;
+
+    // Only the combos whose key and modifiers all have a known name.
+    public IReadOnlyList<(KeyModifier Modifiers, KeyCode Key)> Parsed { get; }
 
     public bool Contains(HotkeyCombo combo) =>
         _combos.Contains(NormalizedKey(combo.Modifiers, combo.Key));
@@ -52,41 +62,90 @@ public sealed class BoundHotkeyCombos
         ILogger logger
     )
     {
-        var combos = new HashSet<(string, string)>();
-
-        foreach (var binding in bindings)
-        {
-            if (!string.Equals(binding.EventId, eventId, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            if (!IsSuppressionRequested(binding, suppressParameterName))
-            {
-                continue;
-            }
-
-            if (
-                !IsScopeSatisfied(
+        var suppressed = Collect(
+            bindings,
+            eventId,
+            comboParameterName,
+            suppressParameterName,
+            binding =>
+                IsScopeSatisfied(
                     binding,
                     deviceParameterName,
                     profileParameterName,
                     folderParameterName,
                     connectedClients
                 )
+        );
+
+        logger.Information("Suppressing {Count} bound hotkey combo(s).", suppressed.Count);
+        return suppressed;
+    }
+
+    // Every combo some trigger asks to suppress, whether or not its scope applies right now.
+    public static BoundHotkeyCombos RequestedAnywhere(
+        IReadOnlyList<EventBinding> bindings,
+        string eventId,
+        string comboParameterName,
+        string suppressParameterName
+    ) => Collect(bindings, eventId, comboParameterName, suppressParameterName, _ => true);
+
+    private static BoundHotkeyCombos Collect(
+        IReadOnlyList<EventBinding> bindings,
+        string eventId,
+        string comboParameterName,
+        string suppressParameterName,
+        Func<EventBinding, bool> isInScope
+    )
+    {
+        var combos = new HashSet<(string, string)>();
+        var parsed = new List<(KeyModifier, KeyCode)>();
+
+        foreach (var binding in bindings)
+        {
+            if (
+                !string.Equals(binding.EventId, eventId, StringComparison.Ordinal)
+                || !IsSuppressionRequested(binding, suppressParameterName)
+                || !isInScope(binding)
+                || !TryReadCombo(binding, comboParameterName, out var key, out var modifiers)
             )
             {
                 continue;
             }
 
-            if (TryReadCombo(binding, comboParameterName, out var key, out var modifiers))
+            if (combos.Add(NormalizedKey(modifiers, key)) && TryParse(modifiers, key, out var combo))
             {
-                combos.Add(NormalizedKey(modifiers, key));
+                parsed.Add(combo);
             }
         }
 
-        logger.Information("Suppressing {Count} bound hotkey combo(s).", combos.Count);
-        return combos.Count == 0 ? None : new BoundHotkeyCombos(combos);
+        return combos.Count == 0 ? None : new BoundHotkeyCombos(combos, parsed);
+    }
+
+    private static bool TryParse(
+        IReadOnlyList<string> modifiers,
+        string key,
+        out (KeyModifier Modifiers, KeyCode Key) combo
+    )
+    {
+        combo = default;
+        if (!KeyNames.TryParse(key, out var code))
+        {
+            return false;
+        }
+
+        var known = KeyModifier.None;
+        foreach (var modifier in modifiers)
+        {
+            if (!KeyNames.TryParseModifier(modifier, out var resolved))
+            {
+                return false;
+            }
+
+            known |= resolved;
+        }
+
+        combo = (known, code);
+        return true;
     }
 
     private static bool IsSuppressionRequested(

@@ -31,8 +31,9 @@ src/SystemHotkeys/
                                suppressed combo swallows, the access level, and the per-OS factory
     Windows/                  WindowsKeyboardHook (WH_KEYBOARD_LL plus its message loop) and its P/Invoke
     MacOS/                    MacKeyboardHook (Quartz event tap on a CFRunLoop thread) and its P/Invoke
-    Linux/                    LinuxKeyboardHook (poll loop over evdev keyboards), EvdevKeyboard and its
-                               libc P/Invoke
+    Linux/                    LinuxKeyboardHook (poll loop over evdev keyboards, plus the portal worker),
+                               EvdevKeyboard and its libc P/Invoke, GlobalShortcutsPortal (the D-Bus
+                               client) and XdgShortcutTrigger (KeyCode to xkbcommon trigger strings)
     HotkeyCombo.cs            held keys into the { modifiers, key } shape the combo editor stores
     BoundHotkeyCombos.cs      turns GetBindings() into the set of combos currently opted into
                                suppression
@@ -72,7 +73,8 @@ Design knowledge that is not obvious from the code alone:
   than an id nobody recognises. Undocumented and unverified against a real host from here, so it could
   stop resolving without notice on a future host; check the picker still offers real device names after
   any host update.
-- **Key names come from the SDK, never from a table of our own.** A backend translates its native code with
+- **Key names come from the SDK, never from a table of our own** (the one exception is
+  `XdgShortcutTrigger`, below, which speaks the portal's xkbcommon format rather than naming keys). A backend translates its native code with
   `MacroDeck.Sdk.Input.NativeKeys` (`FromWindows(vk, scanCode, isExtended)`, `FromMacOs`, `FromLinux`
   with the evdev code) and hands
   `KeyboardHook` a `KeyCode`; `KeyNames.ToName` and `ToModifierNames` produce exactly what the combo editor
@@ -104,8 +106,9 @@ Design knowledge that is not obvious from the code alone:
 - **TCC attributes macOS permissions to the responsible process.** That is Macro Deck for an installed
   plugin, not the plugin's `dotnet`, but the terminal app (VS Code, Terminal) for one started with
   `make run`/`make watch`, so test a permission change by toggling that app. `PluginIntegration` turns the access level into an
-  integration issue: `Denied` always (an Error with a "Check again" action), `ObserveOnly` only on macOS
-  while some binding asks for suppression (a Warning). The host caches the issue list, so a change to the
+  integration issue: `Denied` always (an Error with a "Check again" action), `ObserveOnly` while some
+  binding asks for suppression (a Warning: Accessibility on macOS, `shortcuts-not-taken` with an "Open
+  shortcut settings" action on Linux). The host caches the issue list, so a change to the
   access level or to whether suppression is requested must call `CatalogChanged(CapabilityKinds.Issues)`.
   The host only lets the user resolve an issue the plugin currently reports.
 - **macOS modifiers come from the event flags, not from key presses.** Every key event resyncs the held
@@ -118,18 +121,30 @@ Design knowledge that is not obvious from the code alone:
   letters on a non-US layout (German `Z`/`Y`) after any change to the tap or an SDK update.
 - **Linux reads evdev, because Wayland offers no global key observation.** `LinuxKeyboardHook` opens every
   `/dev/input/event*` with a key below `BTN_MISC`, rescans every 2 seconds for hotplug, and polls them on
-  one thread. Access is `Denied` with no readable keyboard (user not in `input`) and `ObserveOnly`
-  otherwise. Letters are positional: evdev has no layout, and `FromLinux` maps by US position. The
+  one thread. Access is `Denied` with no readable keyboard (user not in `input`), otherwise `Full` once
+  the desktop delivers every combo a trigger asks to suppress and `ObserveOnly` until then. Letters are positional: evdev has no layout, and `FromLinux` maps by US position. The
   struct layouts and open flags in `Linux/NativeMethods.cs` are x86-64 values, which is why
   `KeyboardHook.Create` only picks the backend on X64.
-- **Linux never swallows a key, by design.** Evdev can only drop a key by grabbing the whole keyboard
-  (`EVIOCGRAB`) and re-emitting every other key through uinput, which puts the plugin in the path of
-  every keystroke and freezes that keyboard if the process hangs. The user binds the combo to a no-op
-  in the desktop's own shortcuts instead: the desktop swallows it, and evdev, read below the desktop,
-  still delivers it. So on Linux `PluginIntegration` leaves the suppress toggle out of the event
-  definition (the combo's Linux description explains the desktop route instead), and no
-  Accessibility-style issue is reported there. The XDG GlobalShortcuts portal was rejected too: the
-  desktop, not the trigger, picks the combo, and wlroots compositors do not implement it.
+- **Linux swallows a key through the desktop's GlobalShortcuts portal, never through evdev.** Evdev
+  can only drop a key by grabbing the whole keyboard and re-emitting every other key through uinput,
+  which puts the plugin in the path of every keystroke and freezes that keyboard if the process hangs.
+  So `LinuxKeyboardHook` hands every combo a trigger asks to suppress to
+  `org.freedesktop.portal.GlobalShortcuts` (`GlobalShortcutsPortal`, over Tmds.DBus.Protocol): the
+  desktop asks the user once, then swallows the key and reports it as `Activated`, which publishes the
+  combo. Evdev skips a combo the desktop delivers (`IsDeliveredElsewhere`), or it would fire twice; a
+  combo the desktop declined (empty `trigger_description`) or a desktop without the portal falls back to
+  evdev, firing but not swallowing, and the hook reports `ObserveOnly` so the integration raises the
+  `shortcuts-not-taken` warning. D-Bus is only touched once some trigger asks for suppression.
+- **The portal's rules shape the code.** A session binds only once, so a changed set closes it and
+  opens a new one (`BindAsync`), after a one-second delay that folds a burst of binding changes into one
+  bind. KDE prompts only for shortcut ids it has not seen and names an unidentified app's shortcuts
+  after the session token, so both the ids (`system-hotkeys.` + trigger) and the token are fixed.
+  Because rebinding can prompt, the set handed to the portal is `BoundHotkeyCombos.RequestedAnywhere`,
+  which ignores Device/Profile/Folder scope: following the open folder would rebind on every folder
+  change. Subscribe to a request's `Response` before making the call, or a fast reply is lost. Triggers
+  are xkbcommon names from `XdgShortcutTrigger`, the one key table in this plugin, because the SDK has no
+  keysym names. A unit test cannot reach a desktop, so after any change to the portal code check the
+  dialog, a press, a decline and "Open shortcut settings" by hand on KDE and GNOME.
 - **Framework-dependent on every platform.** Each entrypoint names `runtimes/<rid>/SystemHotkeys.dll`
   with `"runtime": { "kind": "FrameworkDependent", "dotnetVersion":
   "10.0" }`, and `macrodeck-build.json` publishes with `--self-contained false -p:UseAppHost=false` to

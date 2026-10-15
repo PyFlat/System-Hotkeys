@@ -2,6 +2,7 @@ using System.Text.Json;
 using SystemHotkeys.Hotkeys;
 using MacroDeck.Sdk.Decks;
 using MacroDeck.Sdk.Events;
+using MacroDeck.Sdk.Input;
 using NUnit.Framework;
 using Serilog;
 
@@ -148,6 +149,46 @@ public sealed class BoundHotkeyCombosTests
             ),
             Is.False
         );
+    }
+
+    [Test]
+    public void Requested_anywhere_keeps_a_suppressed_combo_whose_scope_does_not_apply()
+    {
+        var binding = Binding(
+            EventId,
+            Combo(["Ctrl", "Shift"], "F3"),
+            Bool(true),
+            folder: Text("folder-not-open")
+        );
+
+        var scoped = FromBindings(binding);
+        var requested = BoundHotkeyCombos.RequestedAnywhere(
+            [binding],
+            EventId,
+            ComboParameterName,
+            SuppressParameterName
+        );
+
+        Assert.That(scoped.Count, Is.EqualTo(0));
+        Assert.That(requested.Count, Is.EqualTo(1));
+        Assert.That(
+            requested.Parsed,
+            Is.EqualTo(new[] { (KeyModifier.Control | KeyModifier.Shift, KeyCode.F3) })
+        );
+    }
+
+    [Test]
+    public void A_combo_with_an_unknown_name_is_counted_but_not_parsed()
+    {
+        var requested = BoundHotkeyCombos.RequestedAnywhere(
+            [Binding(EventId, Combo(["Ctrl"], "NoSuchKey"), Bool(true))],
+            EventId,
+            ComboParameterName,
+            SuppressParameterName
+        );
+
+        Assert.That(requested.Count, Is.EqualTo(1));
+        Assert.That(requested.Parsed, Is.Empty);
     }
 
     [Test]

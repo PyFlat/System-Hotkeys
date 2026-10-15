@@ -1,24 +1,45 @@
 using System.Runtime.Versioning;
+using System.Threading.Channels;
 using MacroDeck.Sdk.Input;
 using Serilog;
+using Tmds.DBus.Protocol;
 using static SystemHotkeys.Hotkeys.Linux.NativeMethods;
 
 namespace SystemHotkeys.Hotkeys.Linux;
 
-// Reading needs the input group. Never swallows: a suppressed combo is left to the desktop's own shortcuts.
+// Reads evdev (needs the input group) and hands suppressed combos to the desktop's GlobalShortcuts portal.
 [SupportedOSPlatform("linux")]
-internal sealed unsafe class LinuxKeyboardHook(ILogger logger) : KeyboardHook(logger)
+internal sealed class LinuxKeyboardHook(ILogger logger) : KeyboardHook(logger)
 {
 	private const string InputDirectory = "/dev/input";
 	private const int PollTimeoutMilliseconds = 500;
 	private const int ReadBatch = 64;
+	private const string ShortcutIdPrefix = "system-hotkeys.";
 	private static readonly TimeSpan _rescanInterval = TimeSpan.FromSeconds(2);
+
+	// Lets a burst of binding changes end in a single rebind, and so a single dialog.
+	private static readonly TimeSpan _rebindDelay = TimeSpan.FromSeconds(1);
 
 	private readonly List<EvdevKeyboard> _keyboards = [];
 	private readonly HashSet<string> _ignoredPaths = [];
+	private readonly Lock _accessGate = new();
+	private readonly Channel<bool> _requestedChanged = Channel.CreateBounded<bool>(
+		new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite }
+	);
 
 	private volatile bool _stopping;
 	private volatile Thread? _thread;
+	private volatile bool _keyboardsReadable;
+	private volatile bool _readerFailed;
+
+	private CancellationTokenSource? _portalStopping;
+	private Task? _portalTask;
+	private volatile GlobalShortcutsPortal? _portal;
+	private volatile IReadOnlyList<RequestedShortcut> _requested = [];
+	private volatile int _requestedCount;
+	private volatile Dictionary<string, string> _triggerDescriptions = [];
+	private volatile Dictionary<string, HotkeyCombo> _delivered = [];
+	private volatile HashSet<string> _deliveredTexts = [];
 
 	internal override void Start()
 	{
@@ -28,20 +49,80 @@ internal sealed unsafe class LinuxKeyboardHook(ILogger logger) : KeyboardHook(lo
 		}
 
 		_stopping = false;
+		_readerFailed = false;
 		_thread = new Thread(Run)
 		{
 			IsBackground = true,
 			Name = "SystemHotkeys.KeyboardHook",
 		};
 		_thread.Start();
+
+		_portalStopping = new CancellationTokenSource();
+		var stopping = _portalStopping.Token;
+		_portalTask = Task.Run(() => RunPortalAsync(stopping));
 	}
 
 	public override void Dispose()
 	{
 		_stopping = true;
+		_portalStopping?.Cancel();
 		_thread?.Join(TimeSpan.FromSeconds(2));
 		_thread = null;
+
+		// RunPortalAsync handles its own failures, so the wait only bounds how long shutdown takes.
+		_portalTask?.Wait(TimeSpan.FromSeconds(2));
+		_portalTask = null;
+		_portalStopping?.Dispose();
+		_portalStopping = null;
 	}
+
+	internal override void SetRequestedSuppression(BoundHotkeyCombos requested)
+	{
+		var shortcuts = new List<RequestedShortcut>(requested.Parsed.Count);
+		foreach (var (modifiers, key) in requested.Parsed)
+		{
+			if (XdgShortcutTrigger.TryCreate(modifiers, key, out var trigger))
+			{
+				shortcuts.Add(new RequestedShortcut(ShortcutIdPrefix + trigger, HotkeyCombo.Create(modifiers, key), trigger));
+			}
+		}
+
+		var unchanged =
+			requested.Count == _requestedCount
+			&& shortcuts
+				.Select(shortcut => shortcut.Id)
+				.ToHashSet(StringComparer.Ordinal)
+				.SetEquals(_requested.Select(shortcut => shortcut.Id));
+		if (unchanged)
+		{
+			return;
+		}
+
+		_requested = shortcuts;
+		_requestedCount = requested.Count;
+		UpdateAccess();
+		_requestedChanged.Writer.TryWrite(true);
+	}
+
+	internal override async Task<bool> OpenShortcutSettingsAsync()
+	{
+		if (_portal is not { } portal)
+		{
+			return false;
+		}
+
+		try
+		{
+			return await portal.ConfigureAsync();
+		}
+		catch (DBusExceptionBase exception)
+		{
+			Logger.Warning(exception, "Could not open the desktop's shortcut settings.");
+			return false;
+		}
+	}
+
+	protected override bool IsDeliveredElsewhere(HotkeyCombo combo) => _deliveredTexts.Contains(combo.Text);
 
 	private void Run()
 	{
@@ -62,7 +143,8 @@ internal sealed unsafe class LinuxKeyboardHook(ILogger logger) : KeyboardHook(lo
 		catch (Exception exception)
 		{
 			Logger.Error(exception, "The Linux keyboard hook stopped; no hotkey will fire until Macro Deck restarts.");
-			ReportAccess(KeyboardHookAccess.Pending);
+			_readerFailed = true;
+			UpdateAccess();
 		}
 		finally
 		{
@@ -113,16 +195,155 @@ internal sealed unsafe class LinuxKeyboardHook(ILogger logger) : KeyboardHook(lo
 			}
 		}
 
-		var access = _keyboards.Count == 0 ? KeyboardHookAccess.Denied : KeyboardHookAccess.ObserveOnly;
-		if (access != Access)
+		var readable = _keyboards.Count > 0;
+		if (readable != _keyboardsReadable || Access == KeyboardHookAccess.Pending)
 		{
-			LogAccess(access, permissionDenied);
+			LogReadable(readable, permissionDenied);
 		}
 
-		ReportAccess(access);
+		_keyboardsReadable = readable;
+		UpdateAccess();
 	}
 
-	private void PollOnce()
+	// Full means every combo a trigger asks to suppress is the desktop's to swallow.
+	private void UpdateAccess()
+	{
+		lock (_accessGate)
+		{
+			ReportAccess(
+				_readerFailed ? KeyboardHookAccess.Pending
+				: !_keyboardsReadable ? KeyboardHookAccess.Denied
+				: _delivered.Count >= _requestedCount ? KeyboardHookAccess.Full
+				: KeyboardHookAccess.ObserveOnly
+			);
+		}
+	}
+
+	private async Task RunPortalAsync(CancellationToken stopping)
+	{
+		GlobalShortcutsPortal? portal = null;
+		var unavailable = false;
+		try
+		{
+			var first = true;
+			while (first || await _requestedChanged.Reader.WaitToReadAsync(stopping))
+			{
+				if (!first)
+				{
+					await Task.Delay(_rebindDelay, stopping);
+				}
+
+				first = false;
+				while (_requestedChanged.Reader.TryRead(out _)) { }
+
+				var requested = _requested;
+				if (portal is null)
+				{
+					// Nothing asks for suppression yet, so leave D-Bus alone.
+					if (requested.Count == 0 || unavailable)
+					{
+						continue;
+					}
+
+					portal = await GlobalShortcutsPortal.TryConnectAsync(reason =>
+						Logger.Warning(
+							"Your desktop cannot take over suppressed hotkeys: {Reason}. They still fire, but reach "
+								+ "other applications too.",
+							reason
+						)
+					);
+					if (portal is null)
+					{
+						unavailable = true;
+						continue;
+					}
+
+					portal.Activated += OnShortcutActivated;
+					portal.ShortcutsChanged += OnShortcutsChanged;
+					_portal = portal;
+				}
+
+				var triggers = await portal.BindAsync(
+					[.. requested.Select(shortcut => (shortcut.Id, Describe(shortcut.Combo), shortcut.Trigger))],
+					stopping
+				);
+				ApplyTriggerDescriptions(requested, triggers, replace: true);
+			}
+		}
+		catch (OperationCanceledException) when (stopping.IsCancellationRequested) { }
+		catch (Exception exception) when (exception is DBusExceptionBase or InvalidOperationException or IOException)
+		{
+			Logger.Warning(
+				exception,
+				"The global shortcuts portal stopped working; suppressed hotkeys reach other applications until "
+					+ "Macro Deck restarts."
+			);
+		}
+		finally
+		{
+			_portal = null;
+			portal?.Dispose();
+			ApplyTriggerDescriptions([], new Dictionary<string, string>(), replace: true);
+		}
+	}
+
+	private static string Describe(HotkeyCombo combo) => PlainText.Resolve(Strings.Shortcuts.Description(combo.Text));
+
+	private void OnShortcutActivated(string id)
+	{
+		if (_delivered.TryGetValue(id, out var combo))
+		{
+			Publish(combo);
+		}
+	}
+
+	private void OnShortcutsChanged(IReadOnlyDictionary<string, string> changed) =>
+		ApplyTriggerDescriptions(_requested, changed, replace: false);
+
+	// A shortcut the user declined or left without a key comes back with an empty description.
+	private void ApplyTriggerDescriptions(
+		IReadOnlyList<RequestedShortcut> requested,
+		IReadOnlyDictionary<string, string> triggers,
+		bool replace
+	)
+	{
+		var descriptions = replace
+			? new Dictionary<string, string>(StringComparer.Ordinal)
+			: new Dictionary<string, string>(_triggerDescriptions, StringComparer.Ordinal);
+		foreach (var (id, description) in triggers)
+		{
+			descriptions[id] = description;
+		}
+
+		var delivered = new Dictionary<string, HotkeyCombo>(StringComparer.Ordinal);
+		foreach (var shortcut in requested)
+		{
+			if (descriptions.TryGetValue(shortcut.Id, out var description) && description.Length > 0)
+			{
+				delivered[shortcut.Id] = shortcut.Combo;
+			}
+		}
+
+		_triggerDescriptions = descriptions;
+		_delivered = delivered;
+		_deliveredTexts = [.. delivered.Values.Select(combo => combo.Text)];
+		if (requested.Count > 0)
+		{
+			Logger.Information(
+				"Your desktop takes over {Delivered} of {Requested} suppressed hotkey(s): {Combos}.",
+				delivered.Count,
+				_requestedCount,
+				string.Join(", ", requested.Select(shortcut => $"{shortcut.Combo.Text} as {DescribeTrigger(descriptions, shortcut.Id)}"))
+			);
+		}
+
+		UpdateAccess();
+	}
+
+	private static string DescribeTrigger(Dictionary<string, string> descriptions, string id) =>
+		descriptions.TryGetValue(id, out var description) && description.Length > 0 ? description : "nothing";
+
+	private unsafe void PollOnce()
 	{
 		var count = _keyboards.Count;
 		if (count == 0)
@@ -204,9 +425,9 @@ internal sealed unsafe class LinuxKeyboardHook(ILogger logger) : KeyboardHook(lo
 		}
 	}
 
-	private void LogAccess(KeyboardHookAccess access, bool permissionDenied)
+	private void LogReadable(bool readable, bool permissionDenied)
 	{
-		if (access == KeyboardHookAccess.ObserveOnly)
+		if (readable)
 		{
 			Logger.Information("Reading {Count} keyboard(s) from {Directory}.", _keyboards.Count, InputDirectory);
 			return;
@@ -221,4 +442,6 @@ internal sealed unsafe class LinuxKeyboardHook(ILogger logger) : KeyboardHook(lo
 			_rescanInterval.TotalSeconds
 		);
 	}
+
+	private sealed record RequestedShortcut(string Id, HotkeyCombo Combo, string Trigger);
 }

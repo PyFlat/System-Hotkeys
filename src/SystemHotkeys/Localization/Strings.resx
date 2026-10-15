@@ -28,14 +28,11 @@
   <data name="Events.HotkeyPressed.Combo.Description" xml:space="preserve">
     <value>The key that fires this trigger. Click Record and press the combo, or pick a key and toggle the modifiers. A key with no modifier is allowed - but a bare key such as a letter or digit then fires this trigger on every press of it anywhere on the machine, so use one only when that is what you want.</value>
   </data>
-  <data name="Events.HotkeyPressed.Combo.LinuxDescription" xml:space="preserve">
-    <value>The key that fires this trigger. Click Record and press the combo, or pick a key and toggle the modifiers. A bare key such as a letter or digit fires this trigger on every press of it anywhere on the machine. The focused app still receives the key: to stop that, bind the same combo to a command that does nothing (such as true) in your desktop's keyboard shortcut settings, and this trigger still fires.</value>
-  </data>
   <data name="Events.HotkeyPressed.Suppress.Label" xml:space="preserve">
     <value>Also stop this key from reaching other apps</value>
   </data>
   <data name="Events.HotkeyPressed.Suppress.Description" xml:space="preserve">
-    <value>Optional. Keeps this combo's trailing key from reaching the focused app - useful when the key also does something there. Modifiers like Ctrl or Shift are never intercepted.</value>
+    <value>Optional. Keeps this combo's trailing key from reaching the focused app - useful when the key also does something there. Modifiers like Ctrl or Shift are never intercepted. On Linux your desktop asks once whether Macro Deck may take over the combo, and then keeps it from every app regardless of Device, Profile or Folder.</value>
   </data>
   <data name="Events.HotkeyPressed.Device.Label" xml:space="preserve">
     <value>Device</value>
@@ -71,7 +68,7 @@
     <value>macOS has not allowed Macro Deck to read keyboard input, so no hotkey fires. Open System Settings, Privacy &amp; Security, Input Monitoring and turn on Macro Deck. Hotkeys start working a few seconds later. If they do not, restart Macro Deck.</value>
   </data>
   <data name="Issues.KeyboardAccessRequired.Description.Linux" xml:space="preserve">
-    <value>Macro Deck cannot read any keyboard, so no hotkey fires. Add your user to the input group (sudo usermod -aG input $USER), then log out and back in. Hotkeys start working a few seconds after Macro Deck can read the keyboard.</value>
+    <value>Macro Deck cannot read any keyboard, so no hotkey fires. Add your user to the input group (sudo usermod -aG input $USER), then log out and back in. Hotkeys start working a few seconds after Macro Deck can read the keyboard. Until then only hotkeys set to stop their key from reaching other apps fire, through your desktop.</value>
   </data>
   <data name="Issues.KeyboardAccessRequired.Action" xml:space="preserve">
     <value>Check again</value>
@@ -84,6 +81,21 @@
   </data>
   <data name="Issues.AccessibilityRequired.Description" xml:space="preserve">
     <value>A hotkey trigger is set to stop its key from reaching other apps, which on macOS needs Accessibility access. Open System Settings, Privacy &amp; Security, Accessibility and turn on Macro Deck. Until then, hotkeys still fire but the focused app sees the key too.</value>
+  </data>
+  <data name="Issues.ShortcutsNotTaken.Title" xml:space="preserve">
+    <value>Some hotkeys still reach other apps</value>
+  </data>
+  <data name="Issues.ShortcutsNotTaken.Description" xml:space="preserve">
+    <value>A hotkey trigger is set to stop its key from reaching other apps, but your desktop has not taken over that combo: it was declined, has no key in your desktop's shortcut settings, or your desktop does not offer global shortcuts to apps. Open the shortcut settings and give Macro Deck's shortcuts their keys. On a desktop without them, bind the combo to a command that does nothing (such as true) in its own shortcut settings. Until then, hotkeys still fire but the focused app sees the key too.</value>
+  </data>
+  <data name="Issues.ShortcutsNotTaken.Action" xml:space="preserve">
+    <value>Open shortcut settings</value>
+  </data>
+  <data name="Issues.ShortcutsNotTaken.CannotOpen" xml:space="preserve">
+    <value>Your desktop cannot open Macro Deck's shortcut settings. Assign the keys in its own shortcut settings, or bind the combo to a command that does nothing (such as true) there.</value>
+  </data>
+  <data name="Shortcuts.Description" xml:space="preserve">
+    <value>Macro Deck hotkey {combo}</value>
   </data>
   <data name="Issues.Unknown" xml:space="preserve">
     <value>This problem is no longer known to System Hotkeys.</value>

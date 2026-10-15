@@ -28,6 +28,7 @@ public sealed class PluginIntegration
 
     internal const string KeyboardAccessIssueId = "keyboard-access-required";
     internal const string AccessibilityIssueId = "accessibility-required";
+    internal const string ShortcutsNotTakenIssueId = "shortcuts-not-taken";
 
     private readonly ILogger _logger;
     private readonly KeyboardHook _hook;
@@ -90,23 +91,15 @@ public sealed class PluginIntegration
                     ActionParameter.KeyboardCombo(
                         ComboParameterName,
                         label: Strings.Events.HotkeyPressed.Combo.Label(),
-                        description: OperatingSystem.IsLinux()
-                            ? Strings.Events.HotkeyPressed.Combo.LinuxDescription()
-                            : Strings.Events.HotkeyPressed.Combo.Description(),
+                        description: Strings.Events.HotkeyPressed.Combo.Description(),
                         required: true
                     ),
-                    // The Linux hook never swallows a key.
-                    .. OperatingSystem.IsLinux()
-                        ? (IReadOnlyList<ActionParameter>)[]
-                        :
-                        [
-                            ActionParameter.Toggle(
-                                SuppressParameterName,
-                                label: Strings.Events.HotkeyPressed.Suppress.Label(),
-                                description: Strings.Events.HotkeyPressed.Suppress.Description(),
-                                literalOnly: true
-                            ),
-                        ],
+                    ActionParameter.Toggle(
+                        SuppressParameterName,
+                        label: Strings.Events.HotkeyPressed.Suppress.Label(),
+                        description: Strings.Events.HotkeyPressed.Suppress.Description(),
+                        literalOnly: true
+                    ),
                     ActionParameter.DynamicChoice(
                         DeviceParameterName,
                         label: Strings.Events.HotkeyPressed.Device.Label(),
@@ -179,7 +172,16 @@ public sealed class PluginIntegration
             _logger
         );
         _hook.SetSuppressed(bound);
-        var suppressionRequested = bound.Count > 0;
+
+        var requested = BoundHotkeyCombos.RequestedAnywhere(
+            bindings,
+            HotkeyPressedEventId,
+            ComboParameterName,
+            SuppressParameterName
+        );
+        _hook.SetRequestedSuppression(requested);
+
+        var suppressionRequested = requested.Count > 0;
         if (suppressionRequested != _suppressionRequested)
         {
             _suppressionRequested = suppressionRequested;
@@ -237,8 +239,18 @@ public sealed class PluginIntegration
                     Severity = IntegrationIssueSeverity.Error,
                 },
             ],
-            // Linux never swallows, so ObserveOnly there is not a missing permission.
-            KeyboardHookAccess.ObserveOnly when _suppressionRequested && OperatingSystem.IsMacOS() =>
+            KeyboardHookAccess.ObserveOnly when _suppressionRequested && OperatingSystem.IsLinux() =>
+            [
+                new IntegrationIssue
+                {
+                    Id = ShortcutsNotTakenIssueId,
+                    Title = Strings.Issues.ShortcutsNotTaken.Title(),
+                    Description = Strings.Issues.ShortcutsNotTaken.Description(),
+                    ActionLabel = Strings.Issues.ShortcutsNotTaken.Action(),
+                    Severity = IntegrationIssueSeverity.Warning,
+                },
+            ],
+            KeyboardHookAccess.ObserveOnly when _suppressionRequested =>
             [
                 new IntegrationIssue
                 {
@@ -254,20 +266,22 @@ public sealed class PluginIntegration
         return Task.FromResult(issues);
     }
 
-    public Task<IssueResolution> ResolveIssueAsync(
+    public async Task<IssueResolution> ResolveIssueAsync(
         string issueId,
         CancellationToken cancellationToken = default
     ) =>
-        Task.FromResult(
-            issueId switch
-            {
-                KeyboardAccessIssueId when _hook.Access != KeyboardHookAccess.Denied => IssueResolution.Ok(),
-                KeyboardAccessIssueId => IssueResolution.Failed(
-                    Strings.Issues.KeyboardAccessRequired.StillDenied()
-                ),
-                _ => IssueResolution.Failed(Strings.Issues.Unknown()),
-            }
-        );
+        issueId switch
+        {
+            KeyboardAccessIssueId when _hook.Access != KeyboardHookAccess.Denied => IssueResolution.Ok(),
+            KeyboardAccessIssueId => IssueResolution.Failed(
+                Strings.Issues.KeyboardAccessRequired.StillDenied()
+            ),
+            ShortcutsNotTakenIssueId when await _hook.OpenShortcutSettingsAsync() => IssueResolution.Ok(),
+            ShortcutsNotTakenIssueId => IssueResolution.Failed(
+                Strings.Issues.ShortcutsNotTaken.CannotOpen()
+            ),
+            _ => IssueResolution.Failed(Strings.Issues.Unknown()),
+        };
 
     // Device resolves through the "macrodeck.devices" options source, not here.
     public Task<DynamicOptionsResult> GetEventOptionsAsync(

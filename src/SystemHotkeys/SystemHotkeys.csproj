@@ -29,6 +29,8 @@
         <PackageReference Include="MacroDeck.Plugin.Hosting" />
         <PackageReference Include="MacroDeck.Plugin.Serilog" />
         <PackageReference Include="MacroDeck.Sdk" />
+        <!-- The XDG GlobalShortcuts portal on Linux. -->
+        <PackageReference Include="Tmds.DBus.Protocol" />
     </ItemGroup>
 
     <!-- The SDK reads the manifest from the content root at startup and resolves the icon path against

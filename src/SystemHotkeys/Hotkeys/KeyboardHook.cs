@@ -49,6 +49,11 @@ internal abstract class KeyboardHook : IDisposable
 
 	internal void SetSuppressed(BoundHotkeyCombos suppressed) => _suppressed = suppressed;
 
+	// For a backend that hands suppression to the desktop, which cannot follow a trigger's scope.
+	internal virtual void SetRequestedSuppression(BoundHotkeyCombos requested) { }
+
+	internal virtual Task<bool> OpenShortcutSettingsAsync() => Task.FromResult(false);
+
 	internal abstract void Start();
 
 	public abstract void Dispose();
@@ -63,6 +68,14 @@ internal abstract class KeyboardHook : IDisposable
 		_access = access;
 		AccessChanged?.Invoke(access);
 	}
+
+	protected void Publish(HotkeyCombo combo)
+	{
+		Logger.Debug("Detected hotkey {Combo}.", combo.Text);
+		HotkeyPressed?.Invoke(combo);
+	}
+
+	protected virtual bool IsDeliveredElsewhere(HotkeyCombo combo) => false;
 
 	// True when the key must not reach other applications.
 	protected bool OnKeyDown(KeyCode key)
@@ -85,9 +98,10 @@ internal abstract class KeyboardHook : IDisposable
 		}
 
 		var combo = HotkeyCombo.Create(modifiers, key);
-
-		Logger.Debug("Detected hotkey {Combo}.", combo.Text);
-		HotkeyPressed?.Invoke(combo);
+		if (!IsDeliveredElsewhere(combo))
+		{
+			Publish(combo);
+		}
 
 		if (!_suppressed.Contains(combo))
 		{

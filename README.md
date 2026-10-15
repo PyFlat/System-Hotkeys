@@ -63,8 +63,8 @@ does not take: doing it without adding input lag to every ordinary use of that m
 key-up correction after the fact, which is real added complexity worth reaching for only once an actual
 bind needs it.
 
-On macOS this needs the Accessibility permission - see [macOS](#macos) below. On Linux the plugin
-never swallows a key itself; [Linux](#linux) shows how to let the desktop do it.
+On macOS this needs the Accessibility permission - see [macOS](#macos) below. On Linux your desktop
+swallows the key for the plugin, after asking you once - see [Linux](#linux).
 
 This works for the overwhelming majority of applications, games included - but a `WH_KEYBOARD_LL` hook is
 not guaranteed to reach every input path (a title using exclusive DirectInput or kernel-level anti-cheat
@@ -139,16 +139,34 @@ Macro Deck's Integrations page; **Check again** there confirms the fix. The
 plugin looks for keyboards every few seconds, so a keyboard plugged in later is picked up without a
 restart.
 
-The plugin only ever reads on Linux, so the trigger does not offer
-[Also stop this key from reaching other apps](#keeping-a-hotkey-from-reaching-other-apps) there; the
-**Hotkey** field's description points here instead. Let the desktop swallow the key: bind the same combo to a command that does nothing in
-your desktop's own shortcut settings. The desktop then keeps the key from the focused app, and the
-plugin still sees it, because it reads the keyboard below the desktop. For example:
+### Keeping a hotkey from reaching other apps on Linux
 
-- **GNOME:** Settings > Keyboard > Keyboard Shortcuts > Custom Shortcuts, command `true`
-- **KDE Plasma:** System Settings > Shortcuts > Add New > Command or Script, command `true`
+Reading evdev never takes a key away from anyone, so for
+[Also stop this key from reaching other apps](#keeping-a-hotkey-from-reaching-other-apps) the plugin
+hands the combo to your desktop through its global shortcuts portal, the same kind of permission
+dialog Macro Deck shows when it sends keys. Turn the toggle on and save, and the desktop asks once
+whether Macro Deck may use that combo. Allow it, and from then on the desktop swallows the key and
+tells the plugin, so the trigger fires and the focused app never sees it. The desktop remembers the
+answer, so it only asks again for a combo it has not seen before. This needs no `input` group: such a
+hotkey fires through the desktop even while Macro Deck cannot read the keyboard.
+
+KDE Plasma (5.27 or newer), GNOME (48 or newer) and Hyprland offer this. If you decline, or your
+desktop does not offer it (Sway and other wlroots desktops, X11 window managers), the hotkey still fires
+but the focused app sees the key too, and the integration shows a warning in Macro Deck's Integrations
+page. **Open shortcut settings** there opens your desktop's settings for Macro Deck's shortcuts, where a
+declined one can be given its key after all. On a desktop without the portal, bind the combo to a
+command that does nothing in the desktop's own shortcut settings instead - the desktop then swallows
+it, and the plugin still sees it, because it reads the keyboard below the desktop:
+
 - **Sway:** `bindsym Ctrl+F3 exec true`
-- **Hyprland:** `bind = CTRL, F3, exec, true`
+- **Other desktops:** a custom shortcut running the command `true`
+
+Two things differ from Windows and macOS:
+
+- The desktop swallows the combo everywhere: a trigger scoped to a device, profile or folder still only
+  fires there, but the key is kept from other apps in every folder.
+- The desktop has the last word on the key. If you change the combo in its dialog or settings, the
+  trigger fires on the key you picked there.
 
 A fullscreen game or virtual machine that asks the desktop to pass every shortcut through to it
 (Wayland's "inhibit shortcuts") still receives the key while it has focus.
@@ -171,7 +189,9 @@ and only when a combo completes. It uses no AI.
 
 On Linux, membership in the `input` group (see [Linux](#linux)) lets every program you run read the
 keyboard, not only Macro Deck. That is how evdev access works and not something the plugin can narrow
-down.
+down. For a hotkey that keeps its key from other apps, the plugin also talks to your desktop's portal
+over the local D-Bus session bus: it registers the combo and is told when it is pressed. Nothing leaves
+the machine.
 
 ## Installing
 
@@ -222,7 +242,8 @@ src/SystemHotkeys/
                             suppressed combo swallows, picks the backend for this OS
     Windows/                the WH_KEYBOARD_LL hook and its message loop
     MacOS/                  the Quartz event tap and its run loop
-    Linux/                  the evdev keyboards and the poll loop that reads them
+    Linux/                  the evdev keyboards and the poll loop that reads them, and the desktop's
+                            global shortcuts portal that swallows a suppressed combo
     HotkeyCombo.cs          held keys into the { modifiers, key } shape the combo editor stores
     BoundHotkeyCombos.cs    turns GetBindings() into the set of combos currently opted into suppression
   Localization/Strings.resx   the default-culture strings, one file per language
@@ -458,7 +479,8 @@ behaviour.
 
 ## License
 
-MIT - see [LICENSE](LICENSE). Macro Deck itself is licensed under Apache 2.0.
+MIT - see [LICENSE](LICENSE). Macro Deck itself is licensed under Apache 2.0. On Linux the plugin talks
+to the desktop's portal with [Tmds.DBus.Protocol](https://github.com/tmds/Tmds.DBus) (MIT).
 
 ## Further reading
 
